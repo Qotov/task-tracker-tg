@@ -760,8 +760,12 @@ def dashboard(
     else:
         blocks.append(NOTHING_TODAY)
 
-    counts = [f"⚠️ {board.overdue} overdue", f"⏳ {board.waiting} waiting"]
-    blocks.append(" · ".join(counts))
+    counts = []
+    if board.overdue:
+        counts.append(f"⚠️ {board.overdue} overdue")
+    if board.waiting:
+        counts.append(f"⏳ {board.waiting} waiting")
+    blocks.append(" · ".join(counts) if counts else "Nothing late, nothing waiting.")
 
     if board.upcoming:
         blocks.append("<b>Next up</b>\n" + _rows(board.upcoming, now=now, tz=tz, owners=owners))

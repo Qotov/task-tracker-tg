@@ -210,6 +210,8 @@ def test_the_dashboard_says_when_today_is_empty(db: Database, alex: User, config
     text = build_text(db, now=NOW, config=config)
 
     assert render.NOTHING_TODAY in text
+    assert "Nothing late, nothing waiting." in text
+    assert "0 overdue" not in text
 
 
 def test_the_dashboard_stays_under_the_limit(db: Database, alex: User, config: Config) -> None:
