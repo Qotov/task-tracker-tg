@@ -21,6 +21,7 @@ from bot import render
 from bot.config import Config
 from bot.db import Database
 from bot.handlers import (
+    announce_unblocked,
     answer_creation,
     build_view,
     card_markup,
@@ -162,6 +163,8 @@ async def on_task_button(
     if updated is None:
         await callback.answer(toast, show_alert=True)
         return
+    if updated.status == "done":
+        announce_unblocked(db, updated, now=now, config=config)
     if card is not None:
         await refresh_card(card, db, updated, now=now, config=config)
     await callback.answer(toast)

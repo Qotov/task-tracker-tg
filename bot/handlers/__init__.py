@@ -13,7 +13,9 @@ from aiogram.types import User as TelegramUser
 from bot import render
 from bot.config import Config
 from bot.db import Database
+from bot.services import outbox
 from bot.services import tasks as task_service
+from bot.services.settings import group_chat_id
 from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
 from bot.services.users import User, ensure_user, get_user, list_users, partner_of
@@ -71,7 +73,35 @@ def card_text(db: Database, task: Task, *, now: datetime, config: Config) -> str
         now=now,
         tz=config.tz,
         creator=get_user(db, task.created_by),
+        blockers=task_service.blockers_of(db, task.id),
     )
+
+
+def announce_unblocked(db: Database, completed: Task, *, now: datetime, config: Config) -> int:
+    """Say in the group that closing this freed something else (section 10).
+
+    Queued like every other notification, so it waits for the end of the owner's
+    quiet hours, and remembered in `notifications_sent` so a restart says nothing
+    twice.
+    """
+    chat_id = group_chat_id(db)
+    if chat_id is None:
+        return 0
+    said = 0
+    day = outbox.local_day(now, config.tz)
+    for task in task_service.newly_unblocked(db, completed.id):
+        if outbox.already_said(db, task_id=task.id, kind="unblocked", day=day):
+            continue
+        owner = owner_of(db, task)
+        outbox.queue(
+            db,
+            chat_id=chat_id,
+            text=render.unblocked(task, owner, now=now, tz=config.tz),
+            send_after=outbox.release_at(now, owner, tz=config.tz),
+        )
+        outbox.remember_said(db, task_id=task.id, kind="unblocked", day=day)
+        said += 1
+    return said
 
 
 def card_markup(db: Database, task: Task) -> InlineKeyboardMarkup | None:
@@ -107,19 +137,30 @@ def build_view(
 
     if view == "today":
         tasks = task_service.list_due_today(db, now=now, tz=config.tz)
-        text = render.today_list(tasks, owners, now=now, tz=config.tz)
+        blocked = task_service.blocked_map(db, tasks)
+        text = render.today_list(tasks, owners, now=now, tz=config.tz, blocked=blocked)
     elif view == "week":
         tasks = task_service.list_week(db, now=now, tz=config.tz)
-        text = render.week_list(tasks, owners, now=now, tz=config.tz)
+        blocked = task_service.blocked_map(db, tasks)
+        text = render.week_list(tasks, owners, now=now, tz=config.tz, blocked=blocked)
     elif view == "month":
         tasks = task_service.list_month(db, now=now, tz=config.tz)
-        text = render.month_list(tasks, owners, now=now, tz=config.tz)
+        blocked = task_service.blocked_map(db, tasks)
+        text = render.month_list(tasks, owners, now=now, tz=config.tz, blocked=blocked)
     elif view == "overdue":
         tasks = task_service.list_overdue(db, now=now)
-        text = render.overdue_list(tasks, owners, now=now, tz=config.tz)
+        blocked = task_service.blocked_map(db, tasks)
+        text = render.overdue_list(tasks, owners, now=now, tz=config.tz, blocked=blocked)
     elif view == "mine":
         tasks = task_service.list_open_for(db, user.telegram_id)
-        text = render.open_list(tasks, title=f"Open tasks for {user.short}", now=now, tz=config.tz)
+        blocked = task_service.blocked_map(db, tasks)
+        text = render.open_list(
+            tasks,
+            title=f"Open tasks for {user.short}",
+            now=now,
+            tz=config.tz,
+            blocked=blocked,
+        )
     elif view == "board":
         board = build_board(db, now=now, tz=config.tz)
         return render.board(board, tz=config.tz), render.board_keyboard()

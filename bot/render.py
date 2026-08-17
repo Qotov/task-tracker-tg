@@ -282,6 +282,7 @@ def task_card(
     now: datetime,
     tz: ZoneInfo = PARIS,
     creator: User | None = None,
+    blockers: Iterable[Task] = (),
 ) -> str:
     """The block shown after a task is created or changed.
 
@@ -299,6 +300,10 @@ def task_card(
         details.append(f"🏷 #{escape(task.project)}")
     lines.append(" · ".join(details))
 
+    waiting_for = list(blockers)
+    if waiting_for:
+        listed = ", ".join(f"#{blocker.id} {escape(blocker.title)}" for blocker in waiting_for)
+        lines.append(f"🔒 blocked by {listed}")
     closed_day = _closed_day(task.due_at, tz=tz)
     if closed_day is not None:
         lines.append(f"🇫🇷 {escape(closed_day)} — public holiday, offices will be shut")
@@ -358,6 +363,7 @@ def today_list(
     *,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """Tasks due today or earlier, grouped by owner."""
     grouped: dict[int, list[Task]] = {}
@@ -371,7 +377,7 @@ def today_list(
     blocks: list[str] = []
     for owner_id, owned in sorted(grouped.items(), key=lambda item: _short_of(owners, item[0])):
         name = _short_of(owners, owner_id)
-        rows = "\n".join(_row(task, now=now, tz=tz) for task in owned)
+        rows = _rows(owned, now=now, tz=tz, blocked=blocked)
         blocks.append(f"<b>{escape(name)}</b>\n{rows}")
     return f"{header}\n\n" + "\n\n".join(blocks)
 
@@ -382,6 +388,7 @@ def week_list(
     *,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """The next seven days, grouped by day."""
     grouped: dict[str, list[Task]] = {}
@@ -397,7 +404,7 @@ def week_list(
     blocks: list[str] = []
     for day, due in sorted(grouped.items()):
         when = datetime.strptime(day, "%Y-%m-%d")
-        rows = "\n".join(_row(task, now=now, tz=tz, owners=owners, with_time=True) for task in due)
+        rows = _rows(due, now=now, tz=tz, owners=owners, with_time=True, blocked=blocked)
         blocks.append(f"<b>{when:%a %d %b}</b>\n{rows}")
     return f"{header}\n\n" + "\n\n".join(blocks)
 
@@ -408,6 +415,7 @@ def month_list(
     *,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """The next thirty days, grouped by week — a month of single days would not read."""
     grouped: dict[date, list[Task]] = {}
@@ -424,7 +432,7 @@ def month_list(
     this_week = _monday_of(now.astimezone(tz).date())
     blocks: list[str] = []
     for monday, due in sorted(grouped.items()):
-        rows = "\n".join(_row(task, now=now, tz=tz, owners=owners) for task in due)
+        rows = _rows(due, now=now, tz=tz, owners=owners, blocked=blocked)
         blocks.append(f"<b>{_week_label(monday, this_week)}</b>\n{rows}")
     return f"{header}\n\n" + "\n\n".join(blocks)
 
@@ -448,13 +456,14 @@ def overdue_list(
     *,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """Everything past due, oldest first."""
-    rows = [_row(task, now=now, tz=tz, owners=owners) for task in tasks]
+    listed = list(tasks)
     header = "<b>Overdue</b>"
-    if not rows:
+    if not listed:
         return f"{header}\n\n{NOTHING_OVERDUE}"
-    return f"{header}\n" + "\n".join(rows)
+    return f"{header}\n" + _rows(listed, now=now, tz=tz, owners=owners, blocked=blocked)
 
 
 def open_list(
@@ -463,12 +472,30 @@ def open_list(
     title: str,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """A flat list, used by /mine."""
-    rows = [_row(task, now=now, tz=tz) for task in tasks]
-    if not rows:
+    listed = list(tasks)
+    if not listed:
         return f"<b>{escape(title)}</b>\n\n{NOTHING_OPEN}"
-    return f"<b>{escape(title)}</b>\n" + "\n".join(rows)
+    return f"<b>{escape(title)}</b>\n" + _rows(listed, now=now, tz=tz, blocked=blocked)
+
+
+def _rows(
+    tasks: Iterable[Task],
+    *,
+    now: datetime,
+    tz: ZoneInfo,
+    owners: Mapping[int, User] | None = None,
+    with_time: bool = False,
+    blocked: Mapping[int, list[int]] | None = None,
+) -> str:
+    """A block of list lines, with anything blocked pushed to the bottom (section 10)."""
+    ordered = sorted(tasks, key=lambda task: task.id in (blocked or {}))
+    return "\n".join(
+        _row(task, now=now, tz=tz, owners=owners, with_time=with_time, blocked=blocked)
+        for task in ordered
+    )
 
 
 def _row(
@@ -478,7 +505,14 @@ def _row(
     tz: ZoneInfo,
     owners: Mapping[int, User] | None = None,
     with_time: bool = False,
+    blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
+    blockers = (blocked or {}).get(task.id)
+    if blockers:
+        # Telegram has no grey, so a blocked line is locked and set in italics.
+        waiting_for = ", ".join(f"#{blocker}" for blocker in blockers)
+        return f"<i>🔒 #{task.id} {escape(task.title)} — blocked by {waiting_for}</i>"
+
     line = f"• #{task.id} {escape(task.title)}"
     bits: list[str] = []
     if task.due_at is not None:
@@ -494,6 +528,15 @@ def _row(
     if task.status == "waiting":
         bits.append("waiting")
     return line + (" — " + " · ".join(bits) if bits else "")
+
+
+def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    """Posted in the group when the last thing in the way is finished (section 10)."""
+    when = "" if task.due_at is None else f"\n📅 {_when(task.due_at, now=now, tz=tz)}"
+    return (
+        f"🔓 <b>{escape(task.title)}</b> is free to start.\n"
+        f"#{task.id} · {escape(owner.short)}{when}"
+    )
 
 
 # --- what the bot says first -----------------------------------------------
@@ -544,7 +587,7 @@ def digest(data: Digest, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
         ("⏳ Waiting on somebody", data.follow_ups),
     ):
         if tasks:
-            rows = "\n".join(_row(task, now=now, tz=tz) for task in tasks)
+            rows = _rows(tasks, now=now, tz=tz)
             blocks.append(f"<b>{title}</b>\n{rows}")
     return "\n\n".join(blocks)
 
@@ -689,7 +732,7 @@ def _projects_block(data: Board) -> str:
 def _upcoming_block(data: Board, *, now: datetime, tz: ZoneInfo) -> str:
     if not data.upcoming:
         return ""
-    rows = "\n".join(_row(task, now=now, tz=tz) for task in data.upcoming)
+    rows = _rows(data.upcoming, now=now, tz=tz)
     return f"<b>Next up</b>\n{rows}"
 
 

@@ -139,6 +139,17 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `/settings` nudges one value per press — an hour, half an hour, or a toggle — instead of asking anyone to type `21:00` into a chat.
 - Digest hours and quiet hours wrap round the clock rather than stopping at 00:00 or 23:00.
 
+## Phase 4 behaviour
+
+- A dependency is refused when it would close a loop, checked by walking everything that already waits on the task: a chain that loops can never finish, and the bot would have to lie about one of them.
+- Dropping a blocker frees what it was blocking, exactly as finishing it does — abandoning the thing in the way is a way of clearing it.
+- The unblock announcement goes through the outbox like every other notification, so it waits for the end of the owner's quiet hours, and is remembered in `notifications_sent` so a restart never repeats it.
+- The owner of the freed task decides the quiet window for that group message, because they are the person being told.
+- Blocked lines are locked and italic rather than grey, which Telegram has no way to show, and they sort to the bottom of every list.
+- A blocked card names its blockers by id and title, so the next thing to do is on the card rather than one query away.
+- `/block 12 after 7` also accepts `/block 12 7`, since the word is decoration.
+- `/wait` takes an optional date and otherwise follows the section 7 default of seven days.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

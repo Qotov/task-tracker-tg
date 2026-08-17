@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from difflib import SequenceMatcher
@@ -40,6 +41,9 @@ MONTH_DAYS = 30
 
 #: How alike two titles must read before the bot mentions the older one.
 SIMILAR_ENOUGH = 0.82
+
+#: Said when an id in a command does not exist. Rendering keeps the HTML version.
+UNKNOWN = "There is no task #{task_id}."
 
 
 @dataclass(frozen=True)
@@ -365,6 +369,83 @@ def back_to_todo(db: Database, task_id: int) -> Task | None:
         (task_id,),
     )
     return get_task(db, task_id)
+
+
+def add_dependency(db: Database, task_id: int, depends_on_id: int) -> str | None:
+    """Make one task wait for another. Returns why not, or None when it worked.
+
+    Cycles are refused: a chain that loops can never finish, and the bot would
+    have to choose which task to lie about.
+    """
+    if task_id == depends_on_id:
+        return "A task cannot wait for itself."
+    task = get_task(db, task_id)
+    other = get_task(db, depends_on_id)
+    if task is None:
+        return UNKNOWN.format(task_id=task_id)
+    if other is None:
+        return UNKNOWN.format(task_id=depends_on_id)
+    if depends_on_id in _dependency_closure(db, task_id):
+        return (
+            f"#{task_id} already blocks #{depends_on_id}, directly or through another task. "
+            "Adding this would make a loop that can never finish."
+        )
+    db.execute(
+        "INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)",
+        (task_id, depends_on_id),
+    )
+    return None
+
+
+def _dependency_closure(db: Database, start_id: int) -> set[int]:
+    """Everything that would have to finish before `start_id` can — at any depth."""
+    seen: set[int] = set()
+    stack = [start_id]
+    while stack:
+        current = stack.pop()
+        for row in db.query("SELECT task_id FROM task_deps WHERE depends_on_id = ?", (current,)):
+            dependent = int(row["task_id"])
+            if dependent not in seen:
+                seen.add(dependent)
+                stack.append(dependent)
+    return seen
+
+
+def dependencies_of(db: Database, task_id: int) -> list[Task]:
+    """Everything this task waits for, finished or not."""
+    rows = db.query(
+        """
+        SELECT tasks.* FROM task_deps
+        JOIN tasks ON tasks.id = task_deps.depends_on_id
+        WHERE task_deps.task_id = ? ORDER BY tasks.id
+        """,
+        (task_id,),
+    )
+    return [row_to_task(row) for row in rows]
+
+
+def newly_unblocked(db: Database, done_task_id: int) -> list[Task]:
+    """Tasks that were waiting on this one and now have nothing left to wait for."""
+    rows = db.query(
+        """
+        SELECT tasks.* FROM task_deps
+        JOIN tasks ON tasks.id = task_deps.task_id
+        WHERE task_deps.depends_on_id = ? AND tasks.status = 'todo'
+        ORDER BY tasks.id
+        """,
+        (done_task_id,),
+    )
+    return [task for task in (row_to_task(row) for row in rows) if not is_blocked(db, task.id)]
+
+
+def blocked_map(db: Database, tasks: Iterable[Task]) -> dict[int, list[int]]:
+    """Which of these tasks are blocked, and by what — for greying them in a list."""
+    blocked: dict[int, list[int]] = {}
+    for task in tasks:
+        blockers = blockers_of(db, task.id)
+        if blockers:
+            blocked[task.id] = [blocker.id for blocker in blockers]
+    return blocked
 
 
 def blockers_of(db: Database, task_id: int) -> list[Task]:
