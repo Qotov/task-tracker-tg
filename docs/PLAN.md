@@ -1,0 +1,38 @@
+# PLAN — Phase 1 (skeleton and add/list/done)
+
+Scope: config, migration 001, whitelist middleware, `/start`, `/help`, `/add`,
+`/today`, `/mine`, `/done`, plain-text task creation, the rule-based parser.
+Done when both users can add a task by plain text and close it, and unknown
+senders are ignored.
+
+## Files
+
+| File | What it does |
+| --- | --- |
+| `bot/config.py` | Reads and validates env vars (loads `.env` if present), fails loudly on start. |
+| `bot/migrations/001_init.sql` | The full schema from section 5, verbatim. |
+| `bot/db.py` | Connection (mode 0600, foreign keys on), migration runner, small query helpers. |
+| `bot/parser.py` | Rule-based free-text parsing: owner, project, date/time, priority rejection. |
+| `bot/services/users.py` | Registers a whitelisted sender, derives their `short`, stores `dm_chat_id`. |
+| `bot/services/tasks.py` | Create a task from parsed text, complete it, list today / mine / one task. |
+| `bot/render.py` | Builds every message string (HTML): task card, list sections, help text. |
+| `bot/middleware/whitelist.py` | Drops updates from senders outside `ALLOWED_USER_IDS`, silently, with a warning log. |
+| `bot/handlers/commands.py` | `/start`, `/help`, `/add`, `/today`, `/mine`, `/done` — argument parsing only. |
+| `bot/handlers/freeform.py` | Plain text messages become task drafts. |
+| `bot/main.py` | Entry point: config, migrations, Dispatcher, middleware, routers, long polling. |
+| `tests/conftest.py` | In-memory SQLite with the real migrations applied; fixed clock helpers. |
+| `tests/test_parser.py` | Table of 30+ input strings with expected owner / project / due / title. |
+| `tests/test_whitelist.py` | Proves an unknown sender's update never reaches a handler. |
+| `tests/test_config.py` | Proves a missing `BOT_TOKEN` fails with a clear message. |
+| `tests/test_tasks.py` | Create / complete / list against the real schema. |
+
+## Build order
+
+1. `config.py` + `tests/test_config.py` — nothing can start without it.
+2. `migrations/001_init.sql` + `db.py` + `tests/conftest.py` — schema and the test fixture everything else uses.
+3. `parser.py` + `tests/test_parser.py` — the most important test file; pure, no DB, no Telegram.
+4. `services/users.py`, `services/tasks.py` + `tests/test_tasks.py` — the logic layer.
+5. `render.py` — message strings, so handlers carry none.
+6. `middleware/whitelist.py` + `tests/test_whitelist.py` — the security gate.
+7. `handlers/commands.py`, `handlers/freeform.py`, `main.py` — thin wiring on top.
+8. `make test`, then verify `make run` fails clearly without `BOT_TOKEN`.
