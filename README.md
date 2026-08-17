@@ -42,12 +42,22 @@ Any plain message becomes a task:
 `+1m`, any of them with a time like `14:30` — sets the due date. A date without a
 time means 09:00 Paris. There are no priorities: the due date carries the urgency.
 
-Every task card carries buttons — **Done**, **+1 day**, **Give to …**,
-**Subtask**, **Waiting** — so most days you never type a command. A waiting card
-offers **Done**, **+7 days** and **Back to todo** instead.
+Everything else is buttons. A todo card carries **Done**, **+1 day**,
+**Waiting**, **→ partner**, **Subtask**, **Note**, **Reschedule** and **Drop**; a
+waiting card swaps in **+7 days** and **To do**; a closed card keeps **Reopen**,
+because closing the wrong task with a thumb is easy. **Reschedule** opens
+Today / Tomorrow / +3 days / Next week / No date on the same card.
 
-Commands: `/add`, `/sub`, `/done`, `/drop`, `/due`, `/own`, `/note`, `/today`,
-`/week`, `/overdue`, `/mine`, `/help`, `/start`.
+In a private chat a keyboard sits under the text field with **Today**, **Week**,
+**Overdue**, **Mine**, **Board** and **Menu**. Every list also puts an `#id`
+button under it, so you can open a task and act on it without typing its number.
+
+`/board` draws the tracker: how much of today is done, what is late or waiting,
+a bar chart of the next seven days, who is carrying what, open work per project,
+and the next three things due.
+
+Commands: `/menu`, `/board`, `/add`, `/sub`, `/done`, `/drop`, `/due`, `/own`,
+`/note`, `/today`, `/week`, `/overdue`, `/mine`, `/help`, `/start`.
 
 ## Development
 

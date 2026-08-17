@@ -215,6 +215,26 @@ def shift_due(
     return set_due(db, task_id, due_at=(base + timedelta(days=days)).astimezone(UTC))
 
 
+def set_due_date(
+    db: Database, task_id: int, *, day: date, now: datetime, tz: ZoneInfo = PARIS
+) -> Task | None:
+    """Move a task to a given day, keeping the time of day it already had.
+
+    The reschedule buttons use this: "Tomorrow" on a 14:30 task means 14:30
+    tomorrow, and on a task with no time at all it means the usual 09:00.
+    """
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    clock = (
+        task.due_at.astimezone(tz).timetz()
+        if task.due_at is not None
+        else time(DEFAULT_DUE_HOUR, DEFAULT_DUE_MINUTE, tzinfo=tz)
+    )
+    due_local = datetime.combine(day, clock.replace(tzinfo=None), tzinfo=tz)
+    return set_due(db, task_id, due_at=due_local.astimezone(UTC))
+
+
 def set_owner(db: Database, task_id: int, *, owner_id: int) -> Task | None:
     """Hand a task over. Still exactly one owner — this replaces, never adds."""
     if get_task(db, task_id) is None:

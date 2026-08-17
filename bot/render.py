@@ -8,15 +8,21 @@ section 13: a short prefix, an action, and the task id — `t:done:12`.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 from zoneinfo import ZoneInfo
 
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.parser import PARIS
+from bot.services.stats import Board
 from bot.services.tasks import Task
 from bot.services.users import User
 
@@ -32,24 +38,49 @@ SUBTASK_PROMPT = "What is the subtask of #{task_id}? Send the title in your next
 SUBTASK_EXPIRED = (
     "That subtask prompt was more than five minutes old, so I added this as a normal task."
 )
+NOTE_PROMPT = "What should I note on #{task_id}? Send it in your next message."
+NOTE_EXPIRED = "That note prompt was more than five minutes old, so I let it go."
+
+#: Labels on the keyboard under the text field, matched back in the handlers.
+HOME_TODAY = "📅 Today"
+HOME_WEEK = "🗓 Week"
+HOME_OVERDUE = "⚠️ Overdue"
+HOME_MINE = "📋 Mine"
+HOME_BOARD = "📊 Board"
+HOME_MENU = "☰ Menu"
+
+#: How many tasks in a list get their own "open this one" button.
+OPENABLE_IN_LIST = 8
 
 
 class TaskAction(CallbackData, prefix="t"):
-    """Button payload: renders as `t:done:12`."""
+    """Button payload on a task card: renders as `t:done:12`."""
 
     action: str
     task_id: int
+
+
+class MenuAction(CallbackData, prefix="m"):
+    """Button payload for navigation: renders as `m:today`."""
+
+    view: str
 
 
 def start_text(user: User) -> str:
     return (
         f"Hello {escape(user.display_name)}, you are registered "
         f"as <b>@{escape(user.short)}</b>.\n\n"
-        "Write anything in the group and it becomes a task. Markers you can use:\n"
-        "<b>@name</b> owner · <b>#project</b> project · a date like "
-        "<code>tomorrow</code>, <code>20/09</code>, <code>+3d</code>, <code>fri 18:00</code>.\n\n"
-        "Try <code>/help</code> for the command list."
+        "Write anything and it becomes a task:\n"
+        "<code>call the landlord tomorrow #move</code>\n"
+        "<b>@name</b> sets the owner · <b>#project</b> the project · a date like "
+        "<code>tomorrow</code>, <code>20/09</code>, <code>+3d</code> or <code>fri 18:00</code> "
+        "sets when.\n\n"
+        "Everything else is buttons — the keyboard below stays put, and every task "
+        "card carries its own."
     )
+
+
+MENU_TEXT = "☰ <b>Menu</b>\nPick a view. Anything you type becomes a task."
 
 
 def help_text() -> str:
@@ -64,8 +95,12 @@ def help_text() -> str:
         "<code>+2w</code>, <code>+1m</code>, any of them with a time like <code>14:30</code>\n"
         "A date without a time means 09:00. There are no priorities: "
         "the due date is the urgency.\n\n"
-        "Every task card has buttons, so you rarely need a command at all.\n\n"
+        "Every task card has buttons — <b>Done</b>, <b>+1 day</b>, <b>Waiting</b>, "
+        "<b>Subtask</b>, <b>Note</b>, <b>Reschedule</b>, <b>Drop</b>, and <b>Reopen</b> "
+        "once it is closed — so you rarely need a command at all.\n\n"
         "<b>Commands</b>\n"
+        "/menu — the button menu\n"
+        "/board — the tracker board\n"
         "/add &lt;text&gt; — add a task\n"
         "/sub &lt;id&gt; &lt;text&gt; — add a subtask under it\n"
         "/done &lt;id&gt; — close a task\n"
@@ -85,34 +120,106 @@ def help_text() -> str:
 
 
 def task_keyboard(task: Task, *, partner: User | None = None) -> InlineKeyboardMarkup | None:
-    """Section 13: a todo card and a waiting card carry buttons, a closed one does not."""
+    """Everything you can do to one task, without typing (section 13, extended).
+
+    A closed card keeps one button — reopening it — because closing the wrong task
+    with a thumb is the easiest mistake to make here.
+    """
     builder = InlineKeyboardBuilder()
     if task.status == "todo":
         builder.row(
             _button("✅ Done", "done", task.id),
             _button("📅 +1 day", "day1", task.id),
+            _button("⏳ Waiting", "wait", task.id),
         )
-        second: list[InlineKeyboardButton] = []
+        second = [_button("➕ Subtask", "sub", task.id), _button("📝 Note", "note", task.id)]
         if partner is not None:
-            second.append(_button(f"👤 Give to {partner.short}", "give", task.id))
-        second.append(_button("➕ Subtask", "sub", task.id))
-        second.append(_button("⏳ Waiting", "wait", task.id))
+            second.insert(0, _button(f"👤 → {partner.short}", "give", task.id))
         builder.row(*second)
+        builder.row(
+            _button("🕘 Reschedule", "when", task.id),
+            _button("🗑 Drop", "drop", task.id),
+        )
         return builder.as_markup()
     if task.status == "waiting":
         builder.row(
             _button("✅ Done", "done", task.id),
             _button("📅 +7 days", "day7", task.id),
-            _button("↩️ Back to todo", "todo", task.id),
+            _button("↩️ To do", "todo", task.id),
+        )
+        builder.row(
+            _button("📝 Note", "note", task.id),
+            _button("🗑 Drop", "drop", task.id),
         )
         return builder.as_markup()
-    return None
+    builder.row(_button("↩️ Reopen", "reopen", task.id))
+    return builder.as_markup()
+
+
+def reschedule_keyboard(task: Task) -> InlineKeyboardMarkup:
+    """The second level of the card: pick a new date without typing one."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        _button("Today", "when_today", task.id),
+        _button("Tomorrow", "when_tomorrow", task.id),
+        _button("+3 days", "when_3d", task.id),
+    )
+    builder.row(
+        _button("Next week", "when_1w", task.id),
+        _button("✖️ No date", "when_none", task.id),
+        _button("← Back", "when_back", task.id),
+    )
+    return builder.as_markup()
+
+
+def menu_keyboard() -> InlineKeyboardMarkup:
+    """The inline menu: every list the bot can show, one press away."""
+    builder = InlineKeyboardBuilder()
+    builder.row(_view_button("📅 Today", "today"), _view_button("🗓 Week", "week"))
+    builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("📋 Mine", "mine"))
+    builder.row(_view_button("📊 Board", "board"), _view_button("❓ Help", "help"))
+    return builder.as_markup()
+
+
+def list_keyboard(tasks: Iterable[Task], *, view: str) -> InlineKeyboardMarkup:
+    """A list plus one button per task, so any of them can be opened with a thumb."""
+    builder = InlineKeyboardBuilder()
+    shown = list(tasks)[:OPENABLE_IN_LIST]
+    for index in range(0, len(shown), 4):
+        builder.row(*(_button(f"#{task.id}", "open", task.id) for task in shown[index : index + 4]))
+    builder.row(_view_button("🔄 Refresh", view), _view_button("☰ Menu", "menu"))
+    return builder.as_markup()
+
+
+def board_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(_view_button("🔄 Refresh", "board"), _view_button("📅 Today", "today"))
+    builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("☰ Menu", "menu"))
+    return builder.as_markup()
+
+
+def home_keyboard() -> ReplyKeyboardMarkup:
+    """The keyboard under the text field, in private chats: always one tap away."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=HOME_TODAY), KeyboardButton(text=HOME_WEEK)],
+            [KeyboardButton(text=HOME_OVERDUE), KeyboardButton(text=HOME_MINE)],
+            [KeyboardButton(text=HOME_BOARD), KeyboardButton(text=HOME_MENU)],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="…or just type a task",
+    )
 
 
 def _button(text: str, action: str, task_id: int) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         text=text, callback_data=TaskAction(action=action, task_id=task_id).pack()
     )
+
+
+def _view_button(text: str, view: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=MenuAction(view=view).pack())
 
 
 # --- cards -----------------------------------------------------------------
@@ -267,6 +374,111 @@ def _row(
     if task.status == "waiting":
         bits.append("waiting")
     return line + (" — " + " · ".join(bits) if bits else "")
+
+
+# --- the board -------------------------------------------------------------
+
+BOARD_EMPTY = "📊 <b>Tracker</b>\n\nNothing open and nothing closed today. Enjoy it."
+
+_DONE_MARK = "▰"
+_TODO_MARK = "▱"
+_BAR_MARK = "█"
+_BAR_WIDTH = 10
+
+
+def board(data: Board, *, tz: ZoneInfo = PARIS) -> str:
+    """The whole picture in one message: progress today, the week, who, what."""
+    if data.is_empty:
+        return BOARD_EMPTY
+
+    local = data.at.astimezone(tz)
+    blocks = [
+        f"📊 <b>Tracker — {local:%a %d %b %H:%M}</b>",
+        _today_block(data),
+        _week_block(data, today=local.date()),
+        _people_block(data),
+        _projects_block(data),
+        _upcoming_block(data, now=data.at, tz=tz),
+    ]
+    return "\n\n".join(block for block in blocks if block)
+
+
+def _today_block(data: Board) -> str:
+    total = data.today_total
+    bar = progress_bar(data.done_today, total)
+    headline = (
+        f"{bar}  {data.done_today} of {total} done today" if total else f"{bar}  nothing due today"
+    )
+    counters = [f"📦 {data.open_total} open"]
+    if data.overdue:
+        counters.insert(0, f"⚠️ {data.overdue} overdue")
+    if data.waiting:
+        counters.insert(-1, f"⏳ {data.waiting} waiting")
+    return f"{headline}\n{' · '.join(counters)}"
+
+
+def _week_block(data: Board, *, today: date) -> str:
+    if not data.days:  # pragma: no cover - always seven days
+        return ""
+    busiest = max(day.count for day in data.days)
+    if busiest == 0:
+        return "<b>The week ahead</b>\nNothing dated in the next seven days."
+    lines = []
+    for day in data.days:
+        label = "today" if day.day == today else f"{day.day:%a %d}"
+        bar = volume_bar(day.count, busiest) if day.count else "·"
+        lines.append(f"{label:<8}{bar} {day.count or ''}".rstrip())
+    return "<b>The week ahead</b>\n<pre>" + "\n".join(lines) + "</pre>"
+
+
+def _people_block(data: Board) -> str:
+    if len(data.people) < 2:
+        return ""
+    lines = []
+    for person in data.people:
+        total = person.due_today + person.done_today
+        bar = progress_bar(person.done_today, total, width=6)
+        tail = f"{person.done_today}/{total} today" if total else "clear today"
+        if person.overdue:
+            tail += f" · {person.overdue} late"
+        if person.waiting:
+            tail += f" · {person.waiting} waiting"
+        lines.append(f"{person.user.short[:10]:<11}{bar}  {tail}")
+    return "<b>Who is carrying what</b>\n<pre>" + escape("\n".join(lines)) + "</pre>"
+
+
+def _projects_block(data: Board) -> str:
+    if not data.projects:
+        return ""
+    biggest = max(project.count for project in data.projects)
+    lines = [
+        f"{(project.project or 'no project')[:14]:<15}"
+        f"{volume_bar(project.count, biggest)} {project.count}"
+        for project in data.projects[:6]
+    ]
+    return "<b>Open by project</b>\n<pre>" + escape("\n".join(lines)) + "</pre>"
+
+
+def _upcoming_block(data: Board, *, now: datetime, tz: ZoneInfo) -> str:
+    if not data.upcoming:
+        return ""
+    rows = "\n".join(_row(task, now=now, tz=tz) for task in data.upcoming)
+    return f"<b>Next up</b>\n{rows}"
+
+
+def progress_bar(done: int, total: int, *, width: int = _BAR_WIDTH) -> str:
+    """`▰▰▰▱▱▱▱▱▱▱` — how much of today is behind you."""
+    if total <= 0:
+        return _TODO_MARK * width
+    filled = round(width * done / total)
+    return _DONE_MARK * filled + _TODO_MARK * (width - filled)
+
+
+def volume_bar(count: int, biggest: int, *, width: int = _BAR_WIDTH) -> str:
+    """A bar scaled against the busiest row, so the shape is readable at a glance."""
+    if biggest <= 0 or count <= 0:
+        return ""
+    return _BAR_MARK * max(1, round(width * count / biggest))
 
 
 def _when(due: datetime, *, now: datetime, tz: ZoneInfo) -> str:

@@ -4,19 +4,30 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from aiogram import Router
+from aiogram import F, Router
+from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
 from bot import render
 from bot.config import Config
 from bot.db import Database
-from bot.handlers import answer_creation, owner_of, register_sender, send_card
+from bot.handlers import answer_creation, build_view, owner_of, register_sender, send_card
 from bot.parser import parse_task_ref, parse_when
 from bot.services import tasks as task_service
-from bot.services.users import User, get_by_short, list_users
+from bot.services.users import User, get_by_short
 
 router = Router(name="commands")
+
+#: Labels on the keyboard under the text field, and the view each one opens.
+HOME_BUTTONS = {
+    render.HOME_TODAY: "today",
+    render.HOME_WEEK: "week",
+    render.HOME_OVERDUE: "overdue",
+    render.HOME_MINE: "mine",
+    render.HOME_BOARD: "board",
+    render.HOME_MENU: "menu",
+}
 
 ADD_USAGE = "Tell me what to add, like <code>/add call the mairie tomorrow #mother-visa</code>."
 SUB_USAGE = "Use <code>/sub 12 pay the timbre fiscal</code>."
@@ -31,17 +42,48 @@ UNKNOWN_OWNER = "I do not know <b>@{short}</b>. They need to send me /start firs
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, db: Database) -> None:
+async def cmd_start(message: Message, db: Database, config: Config) -> None:
     user = register_sender(message, db)
     if user is None:  # pragma: no cover - the whitelist guarantees a sender
         return
-    await message.answer(render.start_text(user))
+    if message.chat.type == ChatType.PRIVATE:
+        # The keyboard under the text field is per-chat, so it only makes sense
+        # in a private one: in the group it would appear for both of them.
+        await message.answer(render.start_text(user), reply_markup=render.home_keyboard())
+    else:
+        await message.answer(render.start_text(user))
+    await _show_view("menu", message, db, user=user, config=config)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message, db: Database) -> None:
     register_sender(message, db)
-    await message.answer(render.help_text())
+    await message.answer(render.help_text(), reply_markup=render.menu_keyboard())
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message, db: Database, config: Config) -> None:
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    await _show_view("menu", message, db, user=user, config=config)
+
+
+@router.message(Command("board"))
+async def cmd_board(message: Message, db: Database, config: Config) -> None:
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    await _show_view("board", message, db, user=user, config=config)
+
+
+@router.message(F.text.in_(HOME_BUTTONS))
+async def home_button(message: Message, db: Database, config: Config) -> None:
+    """The keyboard under the text field sends plain text; map it back to a view."""
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    await _show_view(HOME_BUTTONS[message.text or ""], message, db, user=user, config=config)
 
 
 @router.message(Command("add"))
@@ -180,49 +222,39 @@ async def cmd_note(message: Message, command: CommandObject, db: Database, confi
 
 @router.message(Command("today"))
 async def cmd_today(message: Message, db: Database, config: Config) -> None:
-    register_sender(message, db)
-    now = datetime.now(UTC)
-    due = task_service.list_due_today(db, now=now, tz=config.tz)
-    await message.answer(render.today_list(due, _owners(db), now=now, tz=config.tz))
+    await _view_command("today", message, db, config)
 
 
 @router.message(Command("week"))
 async def cmd_week(message: Message, db: Database, config: Config) -> None:
-    register_sender(message, db)
-    now = datetime.now(UTC)
-    due = task_service.list_week(db, now=now, tz=config.tz)
-    await message.answer(render.week_list(due, _owners(db), now=now, tz=config.tz))
+    await _view_command("week", message, db, config)
 
 
 @router.message(Command("overdue"))
 async def cmd_overdue(message: Message, db: Database, config: Config) -> None:
-    register_sender(message, db)
-    now = datetime.now(UTC)
-    late = task_service.list_overdue(db, now=now)
-    await message.answer(render.overdue_list(late, _owners(db), now=now, tz=config.tz))
+    await _view_command("overdue", message, db, config)
 
 
 @router.message(Command("mine"))
 async def cmd_mine(message: Message, db: Database, config: Config) -> None:
+    await _view_command("mine", message, db, config)
+
+
+async def _view_command(view: str, message: Message, db: Database, config: Config) -> None:
     user = register_sender(message, db)
     if user is None:  # pragma: no cover - the whitelist guarantees a sender
         return
-    open_tasks = task_service.list_open_for(db, user.telegram_id)
-    await message.answer(
-        render.open_list(
-            open_tasks,
-            title=f"Open tasks for {user.short}",
-            now=datetime.now(UTC),
-            tz=config.tz,
-        )
-    )
+    await _show_view(view, message, db, user=user, config=config)
+
+
+async def _show_view(
+    view: str, message: Message, db: Database, *, user: User, config: Config
+) -> None:
+    text, markup = build_view(view, db, user=user, now=datetime.now(UTC), config=config)
+    await message.answer(text, reply_markup=markup)
 
 
 def _split_ref(args: str | None) -> tuple[int | None, str]:
     """Split `12 the rest of it` into the task id and the remainder."""
     head, _, rest = (args or "").strip().partition(" ")
     return parse_task_ref(head), rest.strip()
-
-
-def _owners(db: Database) -> dict[int, User]:
-    return {user.telegram_id: user for user in list_users(db)}

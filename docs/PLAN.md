@@ -1,5 +1,20 @@
 # PLAN
 
+## Interface pass — done
+
+Asked for directly: better card buttons, buttons from the moment the bot starts,
+and a visual way to track the work. Outside the phase order; the pinned,
+debounced dashboard of section 12 stays in Phase 6.
+
+| File | What changed |
+| --- | --- |
+| `bot/services/stats.py` | New. Counts today, the week ahead, per person, per project, what is next. |
+| `bot/render.py` | The board (progress and volume bars), the menu, the reschedule row, the home keyboard, richer cards. |
+| `bot/handlers/callbacks.py` | Menu navigation, open-from-list, reschedule submenu, note dialogue, drop and reopen. |
+| `bot/handlers/commands.py` | `/menu`, `/board`, the home-keyboard labels, and all four list commands sharing one view builder. |
+| `bot/handlers/__init__.py` | `build_view`, so a command and a button render the same thing. |
+| `tests/test_board.py` | New. The counting, the drawing, and every new button. |
+
 ## Phase 2 (buttons and cards) — done
 
 Scope: `render.py` keyboards, inline callbacks, the subtask dialogue, `/sub`,

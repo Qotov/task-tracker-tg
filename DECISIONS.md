@@ -74,6 +74,24 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `/due` accepts every date form a task message does, through a new public `parse_when` in the parser.
 - An edit that would not change a card is swallowed, because Telegram answers an identical edit with an error that is not a failure.
 
+## Interface pass (asked for directly, outside the phase list)
+
+- Richer buttons, a menu and a tracker board were requested directly, so they were built ahead of the phase order; the *pinned, debounced* dashboard of section 12 is still Phase 6, and this board is an on-demand `/board` instead.
+- Card buttons go beyond the section 13 list (**Note**, **Reschedule**, **Drop**, and **Reopen**), because a card you can only close or postpone still leaves everything else to typed commands.
+- A closed card keeps one button — **Reopen** — since closing the wrong task with a thumb is the easiest mistake to make here, and until now nothing could undo it.
+- **Reschedule** swaps the buttons on the same message rather than posting a new one, so a card stays a single message in the chat.
+- A reschedule keeps the task's existing time of day (14:30 today becomes 14:30 tomorrow) and falls back to the usual 09:00 for a task that had no date.
+- The keyboard under the text field is attached only in private chats: Telegram shows a reply keyboard to everybody in a group, and two people do not need two copies of it.
+- Its labels start with an emoji (`📅 Today`), so a typed task can never be mistaken for a button press.
+- The menu rewrites one message in place as you move between views, so the chat does not fill with lists.
+- Every list carries one `#id` button per task, up to eight, so a task can be opened and acted on without typing its number.
+- The board counts everything in one pass over the task table in Python rather than in six SQL aggregates: at two users it is faster to read and cheaper to change.
+- Overdue work is drawn in today's column of the week chart, because today is when it has to be dealt with.
+- Counters that are zero are left out — "nothing late" should look calm rather than like two zeroes.
+- Bars are block characters inside `<pre>`, the only way to get columns to line up in Telegram.
+- `bot/services/stats.py` holds the counting and `render.py` the drawing, so the Phase 6 pinned dashboard can reuse both.
+- The board ranks by due date and count only; there is still no priority anywhere in this bot.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

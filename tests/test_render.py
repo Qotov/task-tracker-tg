@@ -52,7 +52,9 @@ def test_callback_data_round_trips() -> None:
 # --- keyboards -------------------------------------------------------------
 
 
-def test_a_todo_card_carries_the_five_buttons(db: Database, alex: User, sasha: User) -> None:
+def test_a_todo_card_can_do_everything_without_typing(
+    db: Database, alex: User, sasha: User
+) -> None:
     task = _make(db)
 
     markup = render.task_keyboard(task, partner=partner_of(db, task.owner_id))
@@ -60,16 +62,22 @@ def test_a_todo_card_carries_the_five_buttons(db: Database, alex: User, sasha: U
     assert _labels(markup) == [
         "✅ Done",
         "📅 +1 day",
-        "👤 Give to sasha",
-        "➕ Subtask",
         "⏳ Waiting",
+        "👤 → sasha",
+        "➕ Subtask",
+        "📝 Note",
+        "🕘 Reschedule",
+        "🗑 Drop",
     ]
     assert _payloads(markup) == [
         "t:done:1",
         "t:day1:1",
+        "t:wait:1",
         "t:give:1",
         "t:sub:1",
-        "t:wait:1",
+        "t:note:1",
+        "t:when:1",
+        "t:drop:1",
     ]
 
 
@@ -78,33 +86,76 @@ def test_the_give_button_disappears_without_a_partner(db: Database, alex: User) 
 
     markup = render.task_keyboard(task, partner=partner_of(db, task.owner_id))
 
-    assert "👤 Give to sasha" not in _labels(markup)
+    assert not any(label.startswith("👤") for label in _labels(markup))
     assert "➕ Subtask" in _labels(markup)
 
 
-def test_a_waiting_card_carries_its_own_three_buttons(db: Database, alex: User) -> None:
+def test_a_waiting_card_carries_its_own_buttons(db: Database, alex: User) -> None:
     task = _make(db)
     waiting = start_waiting(db, task.id, now=NOW)
     assert waiting is not None
 
     markup = render.task_keyboard(waiting)
 
-    assert _labels(markup) == ["✅ Done", "📅 +7 days", "↩️ Back to todo"]
-    assert _payloads(markup) == ["t:done:1", "t:day7:1", "t:todo:1"]
+    assert _labels(markup) == ["✅ Done", "📅 +7 days", "↩️ To do", "📝 Note", "🗑 Drop"]
+    assert _payloads(markup)[:3] == ["t:done:1", "t:day7:1", "t:todo:1"]
 
 
-def test_a_finished_card_has_no_buttons(db: Database, alex: User) -> None:
+def test_a_closed_card_keeps_only_reopen(db: Database, alex: User) -> None:
+    """Closing the wrong task with a thumb must be undoable with a thumb."""
     from bot.services.tasks import complete_task, drop_task
 
     task = _make(db)
     done = complete_task(db, task.id, now=NOW).task
     assert done is not None
-    assert render.task_keyboard(done) is None
+    assert _labels(render.task_keyboard(done)) == ["↩️ Reopen"]
 
     other = _make(db, title="never mind")
     dropped = drop_task(db, other.id)
     assert dropped is not None
-    assert render.task_keyboard(dropped) is None
+    assert _payloads(render.task_keyboard(dropped)) == ["t:reopen:2"]
+
+
+def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, alex: User) -> None:
+    task = _make(db)
+
+    markup = render.reschedule_keyboard(task)
+
+    assert _labels(markup) == ["Today", "Tomorrow", "+3 days", "Next week", "✖️ No date", "← Back"]
+    assert "t:when_tomorrow:1" in _payloads(markup)
+    assert "t:when_back:1" in _payloads(markup)
+
+
+def test_the_menu_reaches_every_view() -> None:
+    markup = render.menu_keyboard()
+
+    assert _payloads(markup) == [
+        "m:today",
+        "m:week",
+        "m:overdue",
+        "m:mine",
+        "m:board",
+        "m:help",
+    ]
+
+
+def test_a_list_offers_one_button_per_task(db: Database, alex: User) -> None:
+    tasks = [_make(db, title=f"task {index}") for index in range(10)]
+
+    markup = render.list_keyboard(tasks, view="today")
+
+    openers = [payload for payload in _payloads(markup) if payload.startswith("t:open:")]
+    assert len(openers) == render.OPENABLE_IN_LIST
+    assert openers[0] == f"t:open:{tasks[0].id}"
+    assert _payloads(markup)[-2:] == ["m:today", "m:menu"]
+
+
+def test_the_home_keyboard_labels_match_the_views() -> None:
+    from bot.handlers.commands import HOME_BUTTONS
+
+    labels = [button.text for row in render.home_keyboard().keyboard for button in row]
+
+    assert set(labels) == set(HOME_BUTTONS)
 
 
 # --- cards -----------------------------------------------------------------

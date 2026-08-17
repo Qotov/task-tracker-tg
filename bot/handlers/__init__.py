@@ -11,8 +11,10 @@ from aiogram.types import InlineKeyboardMarkup, Message
 from bot import render
 from bot.config import Config
 from bot.db import Database
+from bot.services import tasks as task_service
+from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
-from bot.services.users import User, ensure_user, get_user, partner_of
+from bot.services.users import User, ensure_user, get_user, list_users, partner_of
 
 
 def register_sender(message: Message, db: Database) -> User | None:
@@ -68,6 +70,35 @@ async def refresh_card(
     except TelegramBadRequest as error:
         if "message is not modified" not in str(error):
             raise
+
+
+def build_view(
+    view: str, db: Database, *, user: User, now: datetime, config: Config
+) -> tuple[str, InlineKeyboardMarkup]:
+    """One view, rendered the same way whether a command or a menu button asked for it."""
+    owners = {person.telegram_id: person for person in list_users(db)}
+
+    if view == "today":
+        tasks = task_service.list_due_today(db, now=now, tz=config.tz)
+        text = render.today_list(tasks, owners, now=now, tz=config.tz)
+    elif view == "week":
+        tasks = task_service.list_week(db, now=now, tz=config.tz)
+        text = render.week_list(tasks, owners, now=now, tz=config.tz)
+    elif view == "overdue":
+        tasks = task_service.list_overdue(db, now=now)
+        text = render.overdue_list(tasks, owners, now=now, tz=config.tz)
+    elif view == "mine":
+        tasks = task_service.list_open_for(db, user.telegram_id)
+        text = render.open_list(tasks, title=f"Open tasks for {user.short}", now=now, tz=config.tz)
+    elif view == "board":
+        board = build_board(db, now=now, tz=config.tz)
+        return render.board(board, tz=config.tz), render.board_keyboard()
+    elif view == "help":
+        return render.help_text(), render.menu_keyboard()
+    else:
+        return render.MENU_TEXT, render.menu_keyboard()
+
+    return text, render.list_keyboard(tasks, view=view)
 
 
 async def answer_creation(
