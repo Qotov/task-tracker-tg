@@ -22,6 +22,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.parser import PARIS
+from bot.services.digest import Digest
 from bot.services.holidays import french_holiday
 from bot.services.stats import Board
 from bot.services.tasks import Task
@@ -493,6 +494,113 @@ def _row(
     if task.status == "waiting":
         bits.append("waiting")
     return line + (" — " + " · ".join(bits) if bits else "")
+
+
+# --- what the bot says first -----------------------------------------------
+
+
+def reminder(task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    when = "" if task.due_at is None else f" — {_when(task.due_at, now=now, tz=tz)}"
+    return f"⏰ <b>{escape(task.title)}</b>{when}\n#{task.id}"
+
+
+def overdue_ping(task: Task, *, days_late: int, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    late = "since this morning" if days_late == 0 else f"{days_late} day(s) late"
+    return f"⚠️ <b>{escape(task.title)}</b> is {late}.\n#{task.id}" + (
+        "" if task.due_at is None else f" · was due {_when(task.due_at, now=now, tz=tz)}"
+    )
+
+
+def follow_up(task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    del now, tz
+    return f"⏳ <b>{escape(task.title)}</b>\n#{task.id} — no answer yet?"
+
+
+def follow_up_keyboard(task: Task) -> InlineKeyboardMarkup:
+    """The two things you ever want to do about a stalled task."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        _button("✅ Done", "done", task.id),
+        _button("📅 +7 days", "day7", task.id),
+    )
+    return builder.as_markup()
+
+
+def escalation(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    when = "" if task.due_at is None else f" (due {_when(task.due_at, now=now, tz=tz)})"
+    return (
+        f"📣 <b>{escape(task.title)}</b>{when} has been sitting for three days.\n"
+        f"#{task.id} · {escape(owner.short)}"
+    )
+
+
+def digest(data: Digest, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    """The morning message: four sections, none of them shown when empty."""
+    blocks = [f"☀️ <b>Good morning, {escape(data.user.short)} — {now.astimezone(tz):%a %d %b}</b>"]
+    for title, tasks in (
+        ("Due today", data.due_today),
+        ("⚠️ Overdue", data.overdue),
+        ("🔓 Came free", data.unblocked),
+        ("⏳ Waiting on somebody", data.follow_ups),
+    ):
+        if tasks:
+            rows = "\n".join(_row(task, now=now, tz=tz) for task in tasks)
+            blocks.append(f"<b>{title}</b>\n{rows}")
+    return "\n\n".join(blocks)
+
+
+# --- settings --------------------------------------------------------------
+
+
+class SettingAction(CallbackData, prefix="s"):
+    """`s:digest:1` — which field, and which way to nudge it."""
+
+    field: str
+    step: int
+
+
+def settings_text(user: User) -> str:
+    return (
+        "⚙️ <b>Your settings</b>\n\n"
+        f"☀️ Digest at <b>{user.digest_hour:02d}:00</b>\n"
+        f"🤫 Quiet from <b>{escape(user.quiet_start)}</b> to <b>{escape(user.quiet_end)}</b>\n"
+        f"📣 Group escalation <b>{'on' if user.escalation else 'off'}</b>\n\n"
+        "<i>Nothing is ever sent inside your quiet hours — it waits for the end of them.</i>"
+    )
+
+
+def settings_keyboard(user: User) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        _setting_button("−", "digest", -1),
+        _setting_button(f"☀️ {user.digest_hour:02d}:00", "digest", 0),
+        _setting_button("+", "digest", 1),
+    )
+    builder.row(
+        _setting_button("−", "quiet_start", -1),
+        _setting_button(f"🤫 from {user.quiet_start}", "quiet_start", 0),
+        _setting_button("+", "quiet_start", 1),
+    )
+    builder.row(
+        _setting_button("−", "quiet_end", -1),
+        _setting_button(f"🔔 until {user.quiet_end}", "quiet_end", 0),
+        _setting_button("+", "quiet_end", 1),
+    )
+    builder.row(
+        _setting_button(
+            f"📣 Escalation: {'on' if user.escalation else 'off'} — tap to turn "
+            f"{'off' if user.escalation else 'on'}",
+            "escalation",
+            1,
+        )
+    )
+    return builder.as_markup()
+
+
+def _setting_button(text: str, field: str, step: int) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=text, callback_data=SettingAction(field=field, step=step).pack()
+    )
 
 
 # --- the board -------------------------------------------------------------

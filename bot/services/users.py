@@ -111,6 +111,40 @@ def ensure_user(
     return existing
 
 
+#: How far one press of a settings button moves each value.
+DIGEST_HOUR_STEP = 1
+QUIET_MINUTES_STEP = 30
+
+
+def adjust_setting(db: Database, user: User, *, field: str, step: int) -> User:
+    """Nudge one preference. Hours wrap round the clock rather than hitting a wall."""
+    if field == "digest":
+        value = (user.digest_hour + step * DIGEST_HOUR_STEP) % 24
+        db.execute(
+            "UPDATE users SET digest_hour = ? WHERE telegram_id = ?", (value, user.telegram_id)
+        )
+    elif field in {"quiet_start", "quiet_end"}:
+        current = user.quiet_start if field == "quiet_start" else user.quiet_end
+        db.execute(
+            f"UPDATE users SET {field} = ? WHERE telegram_id = ?",  # noqa: S608 - field is checked
+            (_shift_clock(current, step * QUIET_MINUTES_STEP), user.telegram_id),
+        )
+    elif field == "escalation" and step:
+        db.execute(
+            "UPDATE users SET escalation = ? WHERE telegram_id = ?",
+            (0 if user.escalation else 1, user.telegram_id),
+        )
+    refreshed = get_user(db, user.telegram_id)
+    return user if refreshed is None else refreshed  # pragma: no cover - the row exists
+
+
+def _shift_clock(value: str, minutes: int) -> str:
+    """Move an `HH:MM` string by whole minutes, wrapping at midnight."""
+    hour, _, minute = value.partition(":")
+    total = (int(hour) * 60 + int(minute or 0) + minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 def _display_name(
     username: str | None, first_name: str | None, last_name: str | None, telegram_id: int
 ) -> str:

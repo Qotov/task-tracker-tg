@@ -20,6 +20,7 @@ from bot.config import Config, ConfigError, load_config
 from bot.db import MIGRATIONS_DIR, Database
 from bot.handlers import callbacks, commands, freeform
 from bot.middleware.whitelist import WhitelistMiddleware
+from bot.scheduler import TICK_SECONDS, build_scheduler
 
 logger = logging.getLogger("bot")
 
@@ -52,10 +53,17 @@ async def run(config: Config) -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dispatcher = build_dispatcher(db, config)
-    logger.info("polling as a bot for %d allowed user(s)", len(config.allowed_user_ids))
+    scheduler = build_scheduler(bot, db, config)
+    scheduler.start()
+    logger.info(
+        "polling as a bot for %d allowed user(s), tick every %ds",
+        len(config.allowed_user_ids),
+        TICK_SECONDS,
+    )
     try:
         await dispatcher.start_polling(bot)
     finally:
+        scheduler.shutdown(wait=False)
         await bot.session.close()
         db.close()
 

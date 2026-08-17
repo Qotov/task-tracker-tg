@@ -367,6 +367,25 @@ def back_to_todo(db: Database, task_id: int) -> Task | None:
     return get_task(db, task_id)
 
 
+def blockers_of(db: Database, task_id: int) -> list[Task]:
+    """The dependencies of this task that are not finished yet (section 10)."""
+    rows = db.query(
+        """
+        SELECT tasks.* FROM task_deps
+        JOIN tasks ON tasks.id = task_deps.depends_on_id
+        WHERE task_deps.task_id = ? AND tasks.status NOT IN ('done', 'dropped')
+        ORDER BY tasks.id
+        """,
+        (task_id,),
+    )
+    return [row_to_task(row) for row in rows]
+
+
+def is_blocked(db: Database, task_id: int) -> bool:
+    """A blocked task is greyed in listings and never generates a reminder."""
+    return bool(blockers_of(db, task_id))
+
+
 def list_subtasks(db: Database, parent_id: int) -> list[Task]:
     rows = db.query(
         "SELECT * FROM tasks WHERE parent_id = ? ORDER BY due_at IS NULL, due_at, id", (parent_id,)

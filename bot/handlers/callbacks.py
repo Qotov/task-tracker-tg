@@ -31,9 +31,9 @@ from bot.handlers import (
     send_card,
 )
 from bot.parser import add_months
-from bot.render import MenuAction, TaskAction
+from bot.render import MenuAction, SettingAction, TaskAction
 from bot.services import tasks as task_service
-from bot.services.users import partner_of
+from bot.services.users import adjust_setting, partner_of
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,28 @@ class TaskInput(StatesGroup):
 
 
 # --- menu ------------------------------------------------------------------
+
+
+@router.callback_query(SettingAction.filter())
+async def on_setting_button(
+    callback: CallbackQuery, callback_data: SettingAction, db: Database
+) -> None:
+    """Digest hour, quiet hours and escalation, nudged one press at a time."""
+    user = register_presser(callback, db)
+    if user is None:  # pragma: no cover - whitelisted humans only
+        await callback.answer()
+        return
+
+    updated = adjust_setting(db, user, field=callback_data.field, step=callback_data.step)
+    if isinstance(callback.message, Message):
+        try:
+            await callback.message.edit_text(
+                render.settings_text(updated), reply_markup=render.settings_keyboard(updated)
+            )
+        except TelegramBadRequest as error:
+            if "message is not modified" not in str(error):
+                raise
+    await callback.answer()
 
 
 @router.callback_query(MenuAction.filter())

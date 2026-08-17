@@ -105,6 +105,14 @@ async def cmd_month(message: Message, db: Database, config: Config) -> None:
     await _view_command("month", message, db, config)
 
 
+@router.message(Command("settings"))
+async def cmd_settings(message: Message, db: Database) -> None:
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    await message.answer(render.settings_text(user), reply_markup=render.settings_keyboard(user))
+
+
 @router.message(Command("add"))
 async def cmd_add(message: Message, command: CommandObject, db: Database, config: Config) -> None:
     user = register_sender(message, db)

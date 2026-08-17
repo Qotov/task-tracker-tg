@@ -125,6 +125,20 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - A month name only counts as a date when a day number sits next to it, so "march to the mairie" and "the movers may come" stay ordinary words.
 - A named month with no year rolls forward exactly like `20/09` does, so the rule is the same wherever a day and a month appear without one.
 
+## Phase 3 behaviour
+
+- Every notification goes through the outbox, even one that could be sent immediately: routing the only send path through the quiet-hour check is what makes invariant 3 impossible to skip by accident.
+- The tick queues and then flushes in the same run, so a notification outside quiet hours still goes out within the minute.
+- A reminder is remembered against its own `remind_at` date rather than against today, so a task nobody closes pings once instead of every morning; moving the date makes it remind again, which is what rescheduling should mean.
+- An overdue ping starts the day *after* the due date: `remind_at` defaults to `due_at`, so pinging at the due moment and again a minute later would say the same thing twice.
+- Escalation is remembered against the task's due date, which makes it once per task rather than once a day.
+- The digest is remembered per person in the `kind` column (`digest:<id>`), because `notifications_sent` has no user column and the two of them wake at different hours.
+- A notification for somebody who has never opened a private chat is dropped with a warning rather than queued forever: there is nowhere to send it until they type `/start`.
+- The group chat id is claimed by the first group that speaks to the bot, in the whitelist middleware, so a second group is silent rather than half-working (section 6).
+- Quiet hours where start equals end mean no quiet hours at all, which is how somebody turns them off from `/settings`.
+- `/settings` nudges one value per press — an hour, half an hour, or a toggle — instead of asking anyone to type `21:00` into a chat.
+- Digest hours and quiet hours wrap round the clock rather than stopping at 00:00 or 23:00.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.
