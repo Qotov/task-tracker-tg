@@ -57,6 +57,23 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - Binding the group chat id (section 6) is deferred, because Phase 1 lists only the user whitelist and the whitelist already limits the bot to two people.
 - The parser rejects a naive `now`, since a bot that mixes naive and aware datetimes fails silently at the daylight saving boundary.
 
+## Phase 2 behaviour
+
+- The section 13 waiting buttons (**Waiting**, **+7 days**, **Back to todo**) are built now even though the `/wait` command belongs to Phase 4, because Phase 2 is done only when a task can be managed without typing a command, and otherwise the waiting status would be unreachable.
+- Inline keyboards live in `render.py` next to the text: they are presentation, and section 4 gives them no module of their own.
+- Callback payloads are built with aiogram's `CallbackData` factory so they render exactly as section 13 asks — `t:done:12`.
+- **+1 day** on a todo card moves the due date, while **+7 days** on a waiting card moves the follow-up, because that is the date a waiting card is about.
+- Day arithmetic keeps the wall-clock time across a daylight saving change: a task due 09:00 stays due 09:00, which is what a person means by "one more day".
+- **+1 day** on a task with no due date means tomorrow at 09:00 rather than this time tomorrow.
+- **Give to …** is hidden until the second person has sent their first message, since there is nobody to give the task to yet.
+- A subtask inherits its parent's owner and project, so the parser gained a `default_owner` separate from the sender; `@me` still means whoever is typing.
+- The subtask prompt expires after five minutes and a late answer becomes an ordinary task, so nothing anybody typed is silently thrown away.
+- The FSM uses in-memory storage: a restart forgets a half-finished subtask prompt, which costs one retyped message and saves a storage dependency.
+- Dropping a task leaves `done_at` empty — dropped is not done, and later phases must be able to tell them apart.
+- `/week` covers seven days counting today and leaves anything earlier to `/overdue`, so the two lists do not repeat each other.
+- `/due` accepts every date form a task message does, through a new public `parse_when` in the parser.
+- An edit that would not change a card is swallowed, because Telegram answers an identical edit with an error that is not a failure.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

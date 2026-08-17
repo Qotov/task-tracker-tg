@@ -14,10 +14,11 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.config import Config, ConfigError, load_config
 from bot.db import MIGRATIONS_DIR, Database
-from bot.handlers import commands, freeform
+from bot.handlers import callbacks, commands, freeform
 from bot.middleware.whitelist import WhitelistMiddleware
 
 logger = logging.getLogger("bot")
@@ -26,10 +27,16 @@ DOTENV_PATH = Path(".env")
 
 
 def build_dispatcher(db: Database, config: Config) -> Dispatcher:
-    """A Dispatcher with the whitelist in front and `db`/`config` injected into handlers."""
-    dispatcher = Dispatcher(db=db, config=config)
+    """A Dispatcher with the whitelist in front and `db`/`config` injected into handlers.
+
+    Router order matters: commands first, then the callbacks router which owns the
+    subtask dialogue, and only then the catch-all that turns plain text into a task.
+    The FSM lives in memory, so a restart forgets a half-finished subtask prompt.
+    """
+    dispatcher = Dispatcher(storage=MemoryStorage(), db=db, config=config)
     dispatcher.update.outer_middleware(WhitelistMiddleware(config.allowed_user_ids))
     dispatcher.include_router(commands.router)
+    dispatcher.include_router(callbacks.router)
     dispatcher.include_router(freeform.router)
     return dispatcher
 

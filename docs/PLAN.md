@@ -1,4 +1,25 @@
-# PLAN — Phase 1 (skeleton and add/list/done)
+# PLAN
+
+## Phase 2 (buttons and cards) — done
+
+Scope: `render.py` keyboards, inline callbacks, the subtask dialogue, `/sub`,
+`/due`, `/own`, `/note`, `/drop`, `/week`, `/overdue`. Done when a task can be
+fully managed without typing a command.
+
+| File | What changed |
+| --- | --- |
+| `bot/render.py` | `TaskAction` callback data, `task_keyboard`, richer cards (waiting, parent, notes), `week_list` and `overdue_list`. |
+| `bot/handlers/callbacks.py` | New. One handler for every button, plus the five-minute subtask dialogue. |
+| `bot/handlers/commands.py` | `/sub`, `/due`, `/own`, `/note`, `/drop`, `/week`, `/overdue`; every card now carries buttons. |
+| `bot/handlers/__init__.py` | `send_card`, `refresh_card` (in-place edits) and `answer_creation`. |
+| `bot/services/tasks.py` | `set_due`, `shift_due`, `set_owner`, `append_note`, `drop_task`, `start_waiting`, `shift_follow_up`, `back_to_todo`, `list_subtasks`, `list_week`, `list_overdue`. |
+| `bot/services/users.py` | `partner_of`, for the "Give to …" button. |
+| `bot/parser.py` | `default_owner` so subtasks inherit, and a public `parse_when` for `/due`. |
+| `bot/main.py` | `MemoryStorage` for the FSM; the callbacks router sits between commands and freeform. |
+| `tests/test_task_edits.py` | New. Every edit, including a daylight-saving crossing. |
+| `tests/test_render.py` | New. Cards, keyboards, callback payloads, and what each button does. |
+
+## Phase 1 (skeleton and add/list/done) — done
 
 Scope: config, migration 001, whitelist middleware, `/start`, `/help`, `/add`,
 `/today`, `/mine`, `/done`, plain-text task creation, the rule-based parser.

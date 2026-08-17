@@ -56,6 +56,18 @@ def list_users(db: Database) -> list[User]:
     return [row_to_user(row) for row in db.query("SELECT * FROM users ORDER BY short")]
 
 
+def partner_of(db: Database, telegram_id: int) -> User | None:
+    """The other half of the couple, for the "Give to …" button.
+
+    There are exactly two users, so "the other one" is unambiguous; it is None
+    until the second person has sent their first message.
+    """
+    row = db.query_one(
+        "SELECT * FROM users WHERE telegram_id != ? ORDER BY short LIMIT 1", (telegram_id,)
+    )
+    return None if row is None else row_to_user(row)
+
+
 def known_shorts(db: Database) -> frozenset[str]:
     return frozenset(str(row["short"]) for row in db.query("SELECT short FROM users"))
 

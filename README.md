@@ -4,10 +4,12 @@ A shared Telegram task bot for two people. See [docs/TASK.md](docs/TASK.md) for 
 full specification, [CLAUDE.md](CLAUDE.md) for the working rules, and
 [DECISIONS.md](DECISIONS.md) for the choices the spec left open.
 
-**Status: Phase 1.** Plain text and `/add` create tasks, `/today`, `/mine` and
-`/done` manage them, and anyone outside the whitelist is ignored. Buttons,
-reminders, dependencies, templates, the dashboard and documents come in later
-phases. The full setup guide (BotFather, systemd, backups) is written in Phase 6.
+**Status: Phase 2.** Plain text and `/add` create tasks, every card carries
+buttons, and `/sub`, `/due`, `/own`, `/note`, `/drop`, `/done`, `/today`,
+`/week`, `/overdue` and `/mine` manage them. Anyone outside the whitelist is
+ignored. Reminders, dependencies, templates, the dashboard and documents come in
+later phases. The full setup guide (BotFather, systemd, backups) is written in
+Phase 6.
 
 ## Setup
 
@@ -40,7 +42,12 @@ Any plain message becomes a task:
 `+1m`, any of them with a time like `14:30` — sets the due date. A date without a
 time means 09:00 Paris. There are no priorities: the due date carries the urgency.
 
-Commands: `/add`, `/today`, `/mine`, `/done <id>`, `/help`, `/start`.
+Every task card carries buttons — **Done**, **+1 day**, **Give to …**,
+**Subtask**, **Waiting** — so most days you never type a command. A waiting card
+offers **Done**, **+7 days** and **Back to todo** instead.
+
+Commands: `/add`, `/sub`, `/done`, `/drop`, `/due`, `/own`, `/note`, `/today`,
+`/week`, `/overdue`, `/mine`, `/help`, `/start`.
 
 ## Development
 

@@ -8,11 +8,17 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from bot.db import Database, from_iso, to_iso
-from bot.parser import PARIS, ParsedTask, parse_task
+from bot.parser import (
+    DEFAULT_DUE_HOUR,
+    DEFAULT_DUE_MINUTE,
+    PARIS,
+    ParsedTask,
+    parse_task,
+)
 from bot.services.users import User, get_by_short, known_shorts
 
 #: Statuses that still need somebody to do something.
@@ -20,6 +26,12 @@ OPEN_STATUSES = ("todo", "waiting")
 
 #: How far back `/add` looks for the project of the sender's previous task.
 PROJECT_MEMORY = timedelta(minutes=30)
+
+#: Default distance of a follow-up when a task is parked as `waiting` (section 7).
+FOLLOW_UP_DAYS = 7
+
+#: How many days `/week` covers, counting today.
+WEEK_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -125,14 +137,25 @@ def create_from_text(
     sender: User,
     now: datetime,
     tz: ZoneInfo = PARIS,
+    parent: Task | None = None,
 ) -> CreateOutcome:
-    """Parse a free-text message and store the task it describes."""
+    """Parse a free-text message and store the task it describes.
+
+    With a `parent`, the result is a subtask that inherits the parent's project and
+    owner unless the text names its own (section 7).
+    """
+    parent_owner = None if parent is None else _short_of(db, parent.owner_id)
     parsed = parse_task(
         text,
         now=now,
         sender_short=sender.short,
         known_shorts=known_shorts(db),
-        default_project=recent_project(db, sender.telegram_id, now=now),
+        default_project=(
+            parent.project
+            if parent is not None
+            else recent_project(db, sender.telegram_id, now=now)
+        ),
+        default_owner=parent_owner,
         tz=tz,
     )
     if not parsed.ok:
@@ -147,6 +170,7 @@ def create_from_text(
         project=parsed.project,
         due_at=parsed.due_at,
         remind_at=parsed.remind_at,
+        parent_id=None if parent is None else parent.id,
     )
     return CreateOutcome(task=task, warnings=parsed.warnings)
 
@@ -160,6 +184,114 @@ def complete_task(db: Database, task_id: int, *, now: datetime) -> CompleteOutco
         return CompleteOutcome(task=task, already_done=True)
     db.execute("UPDATE tasks SET status = 'done', done_at = ? WHERE id = ?", (to_iso(now), task_id))
     return CompleteOutcome(task=get_task(db, task_id))
+
+
+def set_due(db: Database, task_id: int, *, due_at: datetime | None) -> Task | None:
+    """Move a task's due date. `remind_at` follows it, as it does at creation."""
+    if get_task(db, task_id) is None:
+        return None
+    stored = to_iso(due_at)
+    db.execute("UPDATE tasks SET due_at = ?, remind_at = ? WHERE id = ?", (stored, stored, task_id))
+    return get_task(db, task_id)
+
+
+def shift_due(
+    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = PARIS
+) -> Task | None:
+    """Push a due date out by whole days, keeping the wall-clock time across DST.
+
+    A task with no date at all starts from 09:00 today, so "+1 day" on it means
+    tomorrow morning rather than this time tomorrow.
+    """
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    if task.due_at is None:
+        base = datetime.combine(
+            now.astimezone(tz).date(), time(DEFAULT_DUE_HOUR, DEFAULT_DUE_MINUTE), tzinfo=tz
+        )
+    else:
+        base = task.due_at.astimezone(tz)
+    return set_due(db, task_id, due_at=(base + timedelta(days=days)).astimezone(UTC))
+
+
+def set_owner(db: Database, task_id: int, *, owner_id: int) -> Task | None:
+    """Hand a task over. Still exactly one owner — this replaces, never adds."""
+    if get_task(db, task_id) is None:
+        return None
+    db.execute("UPDATE tasks SET owner_id = ? WHERE id = ?", (owner_id, task_id))
+    return get_task(db, task_id)
+
+
+def append_note(
+    db: Database, task_id: int, *, text: str, now: datetime, tz: ZoneInfo = PARIS
+) -> Task | None:
+    """Add one dated line to the notes, keeping whatever was there before."""
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    line = f"{now.astimezone(tz):%Y-%m-%d}: {text.strip()}"
+    notes = line if not task.notes else f"{task.notes}\n{line}"
+    db.execute("UPDATE tasks SET notes = ? WHERE id = ?", (notes, task_id))
+    return get_task(db, task_id)
+
+
+def drop_task(db: Database, task_id: int) -> Task | None:
+    """Abandon a task. `done_at` stays empty: dropped is not done."""
+    if get_task(db, task_id) is None:
+        return None
+    db.execute("UPDATE tasks SET status = 'dropped' WHERE id = ?", (task_id,))
+    return get_task(db, task_id)
+
+
+def start_waiting(
+    db: Database,
+    task_id: int,
+    *,
+    now: datetime,
+    follow_up_at: datetime | None = None,
+    tz: ZoneInfo = PARIS,
+) -> Task | None:
+    """Park a task as `waiting` on somebody else, with a date to chase it up."""
+    if get_task(db, task_id) is None:
+        return None
+    when = follow_up_at or _in_days(now, FOLLOW_UP_DAYS, tz)
+    db.execute(
+        "UPDATE tasks SET status = 'waiting', follow_up_at = ? WHERE id = ?",
+        (to_iso(when), task_id),
+    )
+    return get_task(db, task_id)
+
+
+def shift_follow_up(
+    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = PARIS
+) -> Task | None:
+    """Give a waiting task more rope, measured from its current follow-up date."""
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    base = task.follow_up_at.astimezone(tz) if task.follow_up_at else now.astimezone(tz)
+    when = (base + timedelta(days=days)).astimezone(UTC)
+    db.execute("UPDATE tasks SET follow_up_at = ? WHERE id = ?", (to_iso(when), task_id))
+    return get_task(db, task_id)
+
+
+def back_to_todo(db: Database, task_id: int) -> Task | None:
+    """Un-park a task: the follow-up disappears with the waiting status."""
+    if get_task(db, task_id) is None:
+        return None
+    db.execute(
+        "UPDATE tasks SET status = 'todo', follow_up_at = NULL, done_at = NULL WHERE id = ?",
+        (task_id,),
+    )
+    return get_task(db, task_id)
+
+
+def list_subtasks(db: Database, parent_id: int) -> list[Task]:
+    rows = db.query(
+        "SELECT * FROM tasks WHERE parent_id = ? ORDER BY due_at IS NULL, due_at, id", (parent_id,)
+    )
+    return [row_to_task(row) for row in rows]
 
 
 def list_due_today(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
@@ -189,6 +321,36 @@ def list_open_for(db: Database, owner_id: int) -> list[Task]:
     return [row_to_task(row) for row in rows]
 
 
+def list_week(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+    """Open tasks due in the next seven days, counting today. Earlier ones are `/overdue`."""
+    start = datetime.combine(now.astimezone(tz).date(), time.min, tzinfo=tz)
+    end = start + timedelta(days=WEEK_DAYS)
+    rows = db.query(
+        f"""
+        SELECT * FROM tasks
+        WHERE status IN ({_placeholders(OPEN_STATUSES)})
+          AND due_at IS NOT NULL AND due_at >= ? AND due_at < ?
+        ORDER BY due_at, id
+        """,
+        (*OPEN_STATUSES, to_iso(start.astimezone(UTC)), to_iso(end.astimezone(UTC))),
+    )
+    return [row_to_task(row) for row in rows]
+
+
+def list_overdue(db: Database, *, now: datetime) -> list[Task]:
+    """Everything past its due date and not finished, oldest first."""
+    rows = db.query(
+        f"""
+        SELECT * FROM tasks
+        WHERE status IN ({_placeholders(OPEN_STATUSES)})
+          AND due_at IS NOT NULL AND due_at < ?
+        ORDER BY due_at, id
+        """,
+        (*OPEN_STATUSES, to_iso(now)),
+    )
+    return [row_to_task(row) for row in rows]
+
+
 def recent_project(db: Database, user_id: int, *, now: datetime) -> str | None:
     """The project of the last task this person created recently, for `#`-less messages."""
     row = db.query_one(
@@ -207,6 +369,16 @@ def _resolve_owner(db: Database, parsed: ParsedTask, sender: User) -> int:
         return sender.telegram_id
     owner = get_by_short(db, parsed.owner)
     return sender.telegram_id if owner is None else owner.telegram_id
+
+
+def _short_of(db: Database, user_id: int) -> str | None:
+    row = db.query_one("SELECT short FROM users WHERE telegram_id = ?", (user_id,))
+    return None if row is None else str(row["short"])
+
+
+def _in_days(now: datetime, days: int, tz: ZoneInfo) -> datetime:
+    """`days` from now, keeping the wall-clock time even across a DST change."""
+    return (now.astimezone(tz) + timedelta(days=days)).astimezone(UTC)
 
 
 def _end_of_day(now: datetime, tz: ZoneInfo) -> datetime:

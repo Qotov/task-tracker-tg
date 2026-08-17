@@ -88,6 +88,7 @@ def parse_task(
     sender_short: str,
     known_shorts: Iterable[str] = (),
     default_project: str | None = None,
+    default_owner: str | None = None,
     tz: ZoneInfo = PARIS,
 ) -> ParsedTask:
     """Turn a raw message into a task draft.
@@ -95,6 +96,9 @@ def parse_task(
     `known_shorts` are the registered user shorts; an `@word` that is not one of
     them (and is not `@me`) is left in the title, because it is a mention of some
     third person rather than an owner.
+
+    `default_owner` is the owner when the text names none — a subtask inherits its
+    parent's owner this way. `@me` always means the sender, whatever the default is.
     """
     if now.tzinfo is None:
         raise ValueError("parse_task needs an aware datetime for `now`")
@@ -107,7 +111,8 @@ def parse_task(
     if _US_RE.search(working):
         return ParsedTask(title=_tidy(working), owner=sender_short, error=ONE_OWNER_ERROR)
 
-    working, owner = _extract_owner(working, sender_short=sender_short, shorts=shorts)
+    working, named_owner = _extract_owner(working, sender_short=sender_short, shorts=shorts)
+    owner = named_owner or default_owner or sender_short
     working, project = _extract_project(working)
     working, priority_marker = _extract_priority(working)
     if priority_marker is not None:
@@ -137,6 +142,18 @@ def parse_task(
     )
 
 
+def parse_when(text: str, *, now: datetime, tz: ZoneInfo = PARIS) -> datetime | None:
+    """Read a date expression on its own, for `/due 20/09` and friends.
+
+    Same forms as inside a task message; returns the UTC moment, or None when the
+    text holds no date this parser recognises.
+    """
+    if now.tzinfo is None:
+        raise ValueError("parse_when needs an aware datetime for `now`")
+    _, due_at = _extract_due(text, local_now=now.astimezone(tz), tz=tz)
+    return due_at
+
+
 def parse_task_ref(raw: str) -> int | None:
     """Read a task id argument. Both `12` and `#12` are accepted."""
     candidate = raw.strip().lstrip("#").strip()
@@ -148,7 +165,7 @@ def parse_task_ref(raw: str) -> int | None:
 # --- markers ---------------------------------------------------------------
 
 
-def _extract_owner(text: str, *, sender_short: str, shorts: set[str]) -> tuple[str, str]:
+def _extract_owner(text: str, *, sender_short: str, shorts: set[str]) -> tuple[str, str | None]:
     owner: str | None = None
     spans: list[tuple[int, int]] = []
     for match in _OWNER_RE.finditer(text):
@@ -162,7 +179,7 @@ def _extract_owner(text: str, *, sender_short: str, shorts: set[str]) -> tuple[s
         if owner is None:
             owner = resolved
         spans.append(match.span())
-    return _remove_spans(text, spans), owner or sender_short
+    return _remove_spans(text, spans), owner
 
 
 def _extract_project(text: str) -> tuple[str, str | None]:
