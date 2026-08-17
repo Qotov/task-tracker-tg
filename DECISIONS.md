@@ -2,6 +2,10 @@
 
 Every choice `docs/TASK.md` left open, with one line of reasoning each.
 
+## Git layout
+
+- What was wrong: a second, empty git repository had been created *inside* the project (`task-tracker-tg/task-tracker-tg`, a lone `Initial commit` holding only `.gitattributes`); it is no longer on disk, and the project is now one repository whose root is the project folder, with `~/Documents/GitHub` deliberately left as a plain folder so each project keeps its own history.
+
 ## Configuration
 
 - Only `BOT_TOKEN` and `ALLOWED_USER_IDS` are required; `DB_PATH` defaults to `./tasks.db`, `TZ` to `Europe/Paris`, `ANTHROPIC_MODEL` to `claude-haiku-4-5-20251001` — a missing optional value should never stop the bot from starting.
