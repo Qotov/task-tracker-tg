@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message
 from aiogram.types import User as TelegramUser
 
-from bot import render
+from bot import dashboard, render
 from bot.config import Config
 from bot.db import Database
 from bot.services import outbox
@@ -113,6 +113,7 @@ async def send_card(
     message: Message, db: Database, task: Task, *, now: datetime, config: Config, lead: str = ""
 ) -> None:
     text = card_text(db, task, now=now, config=config)
+    dashboard.touch()
     await message.answer(lead + text, reply_markup=card_markup(db, task))
 
 
@@ -120,6 +121,7 @@ async def refresh_card(
     message: Message, db: Database, task: Task, *, now: datetime, config: Config
 ) -> None:
     """Update a card in place (section 13). Telegram rejects an edit that changes nothing."""
+    dashboard.touch()
     try:
         await message.edit_text(
             card_text(db, task, now=now, config=config), reply_markup=card_markup(db, task)
@@ -187,4 +189,5 @@ async def answer_creation(
     text = render.with_warnings(
         "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), warnings
     )
+    dashboard.touch()
     await message.answer(text, reply_markup=card_markup(db, outcome.task))

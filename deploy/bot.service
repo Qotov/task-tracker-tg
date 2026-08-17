@@ -1,0 +1,29 @@
+# Section 17. Install with:
+#   sudo cp deploy/bot.service /etc/systemd/system/task-tracker-tg.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now task-tracker-tg
+
+[Unit]
+Description=task-tracker-tg — shared Telegram task bot
+Documentation=https://github.com/Qotov/task-tracker-tg
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=taskbot
+Group=taskbot
+WorkingDirectory=/srv/task-tracker-tg
+EnvironmentFile=/srv/task-tracker-tg/.env
+ExecStart=/usr/local/bin/uv run python -m bot.main
+Restart=always
+RestartSec=5
+
+# The bot needs its own directory and nothing else on the machine.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/task-tracker-tg
+
+[Install]
+WantedBy=multi-user.target

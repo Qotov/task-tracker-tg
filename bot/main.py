@@ -17,8 +17,9 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.config import Config, ConfigError, load_config
+from bot.dashboard import Dashboard, set_current
 from bot.db import MIGRATIONS_DIR, Database
-from bot.handlers import callbacks, commands, freeform
+from bot.handlers import callbacks, commands, files, freeform
 from bot.middleware.whitelist import WhitelistMiddleware
 from bot.scheduler import TICK_SECONDS, build_scheduler
 
@@ -38,6 +39,7 @@ def build_dispatcher(db: Database, config: Config) -> Dispatcher:
     dispatcher.update.outer_middleware(WhitelistMiddleware(config.allowed_user_ids))
     dispatcher.include_router(commands.router)
     dispatcher.include_router(callbacks.router)
+    dispatcher.include_router(files.router)
     dispatcher.include_router(freeform.router)
     return dispatcher
 
@@ -55,6 +57,9 @@ async def run(config: Config) -> None:
     dispatcher = build_dispatcher(db, config)
     scheduler = build_scheduler(bot, db, config)
     scheduler.start()
+    board = Dashboard(bot, db, config)
+    board.start()
+    set_current(board)
     logger.info(
         "polling as a bot for %d allowed user(s), tick every %ds",
         len(config.allowed_user_ids),
@@ -63,6 +68,8 @@ async def run(config: Config) -> None:
     try:
         await dispatcher.start_polling(bot)
     finally:
+        set_current(None)
+        await board.stop()
         scheduler.shutdown(wait=False)
         await bot.session.close()
         db.close()

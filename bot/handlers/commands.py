@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from html import escape
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 
-from bot import render
+from bot import dashboard, render
 from bot.config import Config
 from bot.db import Database
 from bot.handlers import (
@@ -23,7 +24,10 @@ from bot.handlers import (
 )
 from bot.handlers.callbacks import start_new_task
 from bot.parser import parse_task_ref, parse_when
+from bot.services import docs as doc_service
 from bot.services import tasks as task_service
+from bot.services.export import export_csv, export_json
+from bot.services.settings import DASHBOARD_MESSAGE_ID, bind_group, clear_setting
 from bot.services.users import User, get_by_short
 
 router = Router(name="commands")
@@ -152,6 +156,56 @@ async def cmd_block(message: Message, command: CommandObject, db: Database, conf
     if task is None:  # pragma: no cover - add_dependency already checked
         return
     await send_card(message, db, task, now=datetime.now(UTC), config=config, lead="🔒 Blocked\n")
+
+
+@router.message(Command("docs"))
+async def cmd_docs(message: Message, command: CommandObject, db: Database) -> None:
+    """Send the matching scans back, each captioned with the task it belongs to."""
+    register_sender(message, db)
+    query = (command.args or "").strip()
+    if not query:
+        await message.answer(render.DOCS_USAGE)
+        return
+
+    found = doc_service.search(db, query)
+    if not found:
+        await message.answer(render.NO_DOCS_FOUND.format(query=escape(query)))
+        return
+
+    for attachment in found:
+        task = None if attachment.task_id is None else task_service.get_task(db, attachment.task_id)
+        caption = render.doc_caption(attachment, task)
+        if attachment.kind == "photo":
+            await message.answer_photo(attachment.file_id, caption=caption)
+        else:
+            await message.answer_document(attachment.file_id, caption=caption)
+
+
+@router.message(Command("export"))
+async def cmd_export(message: Message, db: Database, config: Config) -> None:
+    """Everything, as a spreadsheet and as JSON — the way out of this bot."""
+    register_sender(message, db)
+    now = datetime.now(UTC)
+    stamp = f"{now.astimezone(config.tz):%Y-%m-%d}"
+    await message.answer_document(
+        BufferedInputFile(export_csv(db).encode("utf-8"), filename=f"tasks-{stamp}.csv"),
+        caption="📤 Every task, as CSV.",
+    )
+    await message.answer_document(
+        BufferedInputFile(export_json(db).encode("utf-8"), filename=f"tasks-{stamp}.json"),
+        caption="📤 The same, as JSON.",
+    )
+
+
+@router.message(Command("dash"))
+async def cmd_dash(message: Message, db: Database, config: Config) -> None:
+    """Rebuild the pinned dashboard and pin it again (section 7)."""
+    register_sender(message, db)
+    if not bind_group(db, message.chat.id) and message.chat.type != ChatType.PRIVATE:
+        return  # pragma: no cover - the middleware already refused another group
+    clear_setting(db, DASHBOARD_MESSAGE_ID)
+    dashboard.touch()
+    await message.answer("📌 Rebuilding the pinned dashboard.")
 
 
 @router.message(Command("settings"))

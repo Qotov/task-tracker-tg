@@ -23,6 +23,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.parser import PARIS
 from bot.services.digest import Digest
+from bot.services.docs import Attachment
 from bot.services.holidays import french_holiday
 from bot.services.stats import Board
 from bot.services.tasks import Task
@@ -644,6 +645,109 @@ def _setting_button(text: str, field: str, step: int) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         text=text, callback_data=SettingAction(field=field, step=step).pack()
     )
+
+
+# --- documents -------------------------------------------------------------
+
+DOC_SEARCH_PROMPT = "Which task? Send a word from its title or project."
+NO_DOCS_FOUND = (
+    "Nothing matches <b>{query}</b>. I search titles, projects, file names and captions."
+)
+DOCS_USAGE = "Use <code>/docs mairie</code> — I search titles, projects, file names and captions."
+
+
+#: Task id on the Search button, which asks for a word instead of filing anything.
+DOC_SEARCH = -1
+
+
+class DocAction(CallbackData, prefix="d"):
+    """`d:3:12` — file attachment 3 against task 12. Task 0 means keep it loose."""
+
+    attachment_id: int
+    task_id: int
+
+
+def intake_text(attachment: Attachment) -> str:
+    name = attachment.file_name or ("a photo" if attachment.kind == "photo" else "that file")
+    return f"📎 Kept <b>{escape(name)}</b>. Which task does it belong to?"
+
+
+def intake_keyboard(attachment: Attachment, recent: Iterable[Task]) -> InlineKeyboardMarkup:
+    """The five most recent open tasks, plus Search and Keep without a task."""
+    builder = InlineKeyboardBuilder()
+    for task in recent:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"#{task.id} {task.title[:40]}",
+                callback_data=DocAction(attachment_id=attachment.id, task_id=task.id).pack(),
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔍 Search",
+            callback_data=DocAction(attachment_id=attachment.id, task_id=DOC_SEARCH).pack(),
+        ),
+        InlineKeyboardButton(
+            text="📥 Keep without a task",
+            callback_data=DocAction(attachment_id=attachment.id, task_id=0).pack(),
+        ),
+    )
+    return builder.as_markup()
+
+
+def filed_text(attachment: Attachment, task: Task | None) -> str:
+    name = attachment.file_name or ("photo" if attachment.kind == "photo" else "file")
+    if task is None:
+        return f"📥 <b>{escape(name)}</b> kept without a task."
+    return f"📎 <b>{escape(name)}</b> filed under #{task.id} {escape(task.title)}."
+
+
+def doc_caption(attachment: Attachment, task: Task | None) -> str:
+    """What is written under a file that `/docs` sends back."""
+    if task is None:
+        return "📥 no task"
+    project = "" if task.project is None else f" · #{escape(task.project)}"
+    return f"#{task.id} {escape(task.title)}{project}"
+
+
+# --- the pinned dashboard --------------------------------------------------
+
+#: Section 12 keeps the pinned message under this.
+DASHBOARD_LIMIT = 3000
+
+
+def dashboard(
+    tasks: Iterable[Task],
+    owners: Mapping[int, User],
+    *,
+    board: Board,
+    now: datetime,
+    tz: ZoneInfo = PARIS,
+    blocked: Mapping[int, list[int]] | None = None,
+) -> str:
+    """Today per owner, the two counts that matter, and the next three things."""
+    grouped: dict[int, list[Task]] = {}
+    for task in tasks:
+        grouped.setdefault(task.owner_id, []).append(task)
+
+    blocks = [f"📌 <b>Today — {now.astimezone(tz):%a %d %b}</b>"]
+    if grouped:
+        for owner_id, owned in sorted(grouped.items(), key=lambda item: _short_of(owners, item[0])):
+            rows = _rows(owned, now=now, tz=tz, blocked=blocked)
+            blocks.append(f"<b>{escape(_short_of(owners, owner_id))}</b>\n{rows}")
+    else:
+        blocks.append(NOTHING_TODAY)
+
+    counts = [f"⚠️ {board.overdue} overdue", f"⏳ {board.waiting} waiting"]
+    blocks.append(" · ".join(counts))
+
+    if board.upcoming:
+        blocks.append("<b>Next up</b>\n" + _rows(board.upcoming, now=now, tz=tz, owners=owners))
+
+    text = "\n\n".join(blocks)
+    if len(text) > DASHBOARD_LIMIT:
+        text = text[: DASHBOARD_LIMIT - 1].rstrip() + "…"
+    return text
 
 
 # --- the board -------------------------------------------------------------

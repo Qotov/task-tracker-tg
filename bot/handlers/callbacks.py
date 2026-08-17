@@ -33,6 +33,7 @@ from bot.handlers import (
 )
 from bot.parser import add_months
 from bot.render import MenuAction, SettingAction, TaskAction
+from bot.services import docs as doc_service
 from bot.services import tasks as task_service
 from bot.services.users import adjust_setting, partner_of
 
@@ -307,6 +308,10 @@ async def on_prompt_answer(
     now = datetime.now(UTC)
     kind = str(data.get("kind", "sub"))
 
+    if kind == "attach_search":
+        await _offer_tasks_for(message, db, attachment_id=int(data.get("task_id", 0)), query=text)
+        return
+
     if kind == "new":
         # No deadline on this one: a late answer is still a task, and typing it in
         # a private chat would have made one anyway.
@@ -340,6 +345,23 @@ async def on_prompt_answer(
         db, text, sender=user, now=now, tz=config.tz, parent=task
     )
     await answer_creation(message, outcome, db, now=now, config=config)
+
+
+async def _offer_tasks_for(
+    message: Message, db: Database, *, attachment_id: int, query: str
+) -> None:
+    """Answer to the Search button on a document: the tasks that match, as buttons."""
+    attachment = doc_service.get_attachment(db, attachment_id)
+    if attachment is None:
+        await message.answer("That file is gone.")
+        return
+    found = doc_service.search_tasks(db, query)
+    if not found:
+        await message.answer(render.NO_DOCS_FOUND.format(query=query))
+        return
+    await message.answer(
+        render.intake_text(attachment), reply_markup=render.intake_keyboard(attachment, found)
+    )
 
 
 def _has_expired(asked_at: object, *, now: datetime) -> bool:

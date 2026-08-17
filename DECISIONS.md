@@ -150,6 +150,21 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `/block 12 after 7` also accepts `/block 12 7`, since the word is decoration.
 - `/wait` takes an optional date and otherwise follows the section 7 default of seven days.
 
+## Phase 6 behaviour
+
+- The dashboard is one asyncio task with a dirty flag: handlers call `dashboard.touch()` and never `edit_message_text`, so a burst of button presses costs one edit rather than six.
+- The text is compared with the last one sent before any edit is attempted, because Telegram answers an identical edit with an error that would otherwise fill the log with failures that are not failures.
+- The dashboard object is a module-level singleton so the handler helpers can mark it dirty without threading it through every call; one process has exactly one pinned message.
+- A dashboard longer than 3000 characters is truncated with an ellipsis rather than dropped, so a busy day still shows something.
+- `/dash` forgets the stored message id and marks the board dirty, which reposts and re-pins — the section 7 behaviour without a separate code path.
+- A document is stored the moment it arrives, before anybody says which task it belongs to: the scan is the thing that must never be lost, and an unfiled file is still findable by name and caption.
+- Only `file_id` is kept, never the bytes, so no document number ever lands on the server's disk.
+- The intake offers the five newest open tasks: the schema has no touched-at column, and the file almost always belongs to something just written.
+- The Search button reuses the same one-message prompt as subtasks and notes rather than adding a second dialogue.
+- `/export` sends CSV and JSON separately: the spreadsheet for reading, the JSON for the attachment index, and both include closed tasks because an export that omits history is not one.
+- The CSV has a `blocked_by` column and no priority column, which is the schema stated in a form a spreadsheet can read.
+- `scripts/backup.sh` uses `sqlite3 .backup` rather than `cp`, the only safe way to copy a database while the bot is writing to it.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.
