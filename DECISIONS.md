@@ -118,6 +118,13 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `/week` and `/month` share one `list_ahead` query, so the two views can never disagree about what "open and dated" means.
 - The keyboard under the text field grew to three rows of three; **➕ New task** sits on the last row next to the menu, where a thumb reaches it.
 
+## Fixes found in live use
+
+- A bot is never written to `users`, and button presses register `callback.from_user` rather than `callback.message.from_user`: the message carrying the buttons was sent by the bot, so the old code registered the bot itself as a person, offered it in **Give to**, and let three tasks end up owned by it.
+- Month names are now understood — `Sep 24`, `24 Sep`, `24 September 14:30`, `24 sep 2027` — because a real message ("book movers2 Sep 24") produced no date at all, and `24 September 14:30` was worse: it took the time and quietly filed the task for today.
+- A month name only counts as a date when a day number sits next to it, so "march to the mairie" and "the movers may come" stay ordinary words.
+- A named month with no year rolls forward exactly like `20/09` does, so the rule is the same wherever a day and a month appear without one.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

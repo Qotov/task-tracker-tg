@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Chat, InlineKeyboardMarkup, Message
+from aiogram.types import User as TelegramUser
 
 from bot import render
 from bot.config import Config
@@ -16,6 +18,8 @@ from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
 from bot.services.users import User, ensure_user, get_user, list_users, partner_of
 
+logger = logging.getLogger(__name__)
+
 
 def register_sender(message: Message, db: Database) -> User | None:
     """Make sure the sender exists in `users`, capturing their DM chat when we are in one.
@@ -23,8 +27,25 @@ def register_sender(message: Message, db: Database) -> User | None:
     Returns None only when Telegram gave us no sender, which the whitelist
     middleware has already made impossible for anything that reaches a handler.
     """
-    sender = message.from_user
+    return register_person(message.from_user, message.chat, db)
+
+
+def register_presser(callback: CallbackQuery, db: Database) -> User | None:
+    """Register whoever pressed the button.
+
+    Never `callback.message.from_user`: the message carrying the buttons was sent
+    by the bot, so that field is the bot itself.
+    """
+    chat = callback.message.chat if isinstance(callback.message, Message) else None
+    return register_person(callback.from_user, chat, db)
+
+
+def register_person(sender: TelegramUser | None, chat: Chat | None, db: Database) -> User | None:
+    """Add a human to `users`. Bots are never users of this bot — not even this one."""
     if sender is None:  # pragma: no cover - dropped by the whitelist middleware
+        return None
+    if sender.is_bot:
+        logger.warning("refusing to register bot %s as a user", sender.id)
         return None
     return ensure_user(
         db,
@@ -32,7 +53,7 @@ def register_sender(message: Message, db: Database) -> User | None:
         username=sender.username,
         first_name=sender.first_name,
         last_name=sender.last_name,
-        dm_chat_id=message.chat.id if message.chat.type == ChatType.PRIVATE else None,
+        dm_chat_id=chat.id if chat is not None and chat.type == ChatType.PRIVATE else None,
     )
 
 

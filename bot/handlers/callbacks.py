@@ -26,6 +26,7 @@ from bot.handlers import (
     card_markup,
     card_text,
     refresh_card,
+    register_presser,
     register_sender,
     send_card,
 )
@@ -69,8 +70,8 @@ async def on_menu_button(
     if not isinstance(callback.message, Message):  # pragma: no cover - inaccessible message
         await callback.answer()
         return
-    user = register_sender(callback.message, db)
-    if user is None or callback.from_user is None:  # pragma: no cover - whitelisted senders only
+    user = register_presser(callback, db)
+    if user is None:  # pragma: no cover - whitelisted humans only
         await callback.answer()
         return
 

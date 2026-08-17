@@ -43,6 +43,22 @@ _US_RE = re.compile(r"(?<![\w@])@us(?!\w)", re.IGNORECASE)
 _PROJECT_RE = re.compile(r"(?<![\w#])#([A-Za-z0-9_][A-Za-z0-9_-]{0,39})")
 _PRIORITY_RE = re.compile(r"(?<![\w!])!([A-Za-z0-9_][A-Za-z0-9_-]{0,19})")
 
+_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+_MONTH_ALTERNATION = "|".join(_MONTHS)
+
 _WEEKDAY_ALTERNATION = (
     "monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun"
 )
@@ -53,6 +69,10 @@ _WHEN_RE = re.compile(
     r"(?P<iso>\d{4}-\d{2}-\d{2})"
     r"|(?P<slash>\d{1,2}/\d{1,2}(?:/\d{2,4})?)"
     r"|(?P<dot>\d{1,2}\.\d{2}(?:\.\d{2,4})?)"
+    rf"|(?P<dayfirst>\d{{1,2}})\s+(?P<dfmonth>{_MONTH_ALTERNATION})[a-z]*"
+    r"(?:\s+(?P<dfyear>\d{4}))?"
+    rf"|(?P<mfmonth>{_MONTH_ALTERNATION})[a-z]*\s+(?P<monthfirst>\d{{1,2}})"
+    r"(?:\s+(?P<mfyear>\d{4}))?"
     r"|(?P<rel>\+\d{1,3}[dwm])"
     r"|(?P<word>today|tomorrow)"
     rf"|(?P<weekday>{_WEEKDAY_ALTERNATION})"
@@ -270,11 +290,14 @@ def _resolve_date(match: re.Match[str], today: date) -> date | None:
         if len(parts) == 3:
             year = int(parts[2])
             return _safe_date(year + 2000 if year < 100 else year, month, day)
-        candidate = _safe_date(today.year, month, day)
-        if candidate is None:
-            return None
-        # A bare day/month that has already passed means the one coming up.
-        return candidate if candidate >= today else _safe_date(today.year + 1, month, day)
+        return _upcoming(day, month, today)
+
+    named = _named_month(match)
+    if named is not None:
+        named_day, named_month, named_year = named
+        if named_year is not None:
+            return _safe_date(named_year, named_month, named_day)
+        return _upcoming(named_day, named_month, today)
 
     relative = match.group("rel")
     if relative is not None:
@@ -296,6 +319,29 @@ def _resolve_date(match: re.Match[str], today: date) -> date | None:
         return today + timedelta(days=ahead or 7)
 
     return None  # pragma: no cover - the regex has no other branch
+
+
+def _named_month(match: re.Match[str]) -> tuple[int, int, int | None] | None:
+    """`24 Sep`, `Sep 24`, `24 September 2027` — day, month, and a year if one was written."""
+    if match.group("dayfirst") is not None:
+        day = int(match.group("dayfirst"))
+        month = _MONTHS[match.group("dfmonth").lower()]
+        year = match.group("dfyear")
+    elif match.group("monthfirst") is not None:
+        day = int(match.group("monthfirst"))
+        month = _MONTHS[match.group("mfmonth").lower()]
+        year = match.group("mfyear")
+    else:
+        return None
+    return day, month, int(year) if year else None
+
+
+def _upcoming(day: int, month: int, today: date) -> date | None:
+    """A day and month with no year means the next time it comes round."""
+    candidate = _safe_date(today.year, month, day)
+    if candidate is None:
+        return None
+    return candidate if candidate >= today else _safe_date(today.year + 1, month, day)
 
 
 def _safe_date(year: int, month: int, day: int) -> date | None:

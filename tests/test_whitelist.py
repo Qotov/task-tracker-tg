@@ -145,3 +145,48 @@ def test_sender_of_reads_a_bare_event() -> None:
 
     assert found is not None
     assert found.id == ALEX_ID
+
+
+# --- who ends up in the users table ----------------------------------------
+
+BOT_ID = 8_861_025_783
+
+
+def test_a_bot_is_never_registered_as_a_user(db: Database) -> None:
+    """Including this one: a bot cannot own a task."""
+    from bot.handlers import register_person
+
+    registered = register_person(
+        TelegramUser(id=BOT_ID, is_bot=True, first_name="tasktrackerbot"),
+        Chat(id=ALEX_ID, type="private"),
+        db,
+    )
+
+    assert registered is None
+    assert db.query("SELECT * FROM users") == []
+
+
+def test_pressing_a_button_registers_the_person_not_the_bot(db: Database) -> None:
+    """`callback.message` was written by the bot, so its `from_user` is the bot."""
+    from bot.handlers import register_presser
+
+    card = Message(
+        message_id=2,
+        date=datetime(2026, 9, 15, 8, 30, tzinfo=UTC),
+        chat=Chat(id=ALEX_ID, type="private"),
+        from_user=TelegramUser(id=BOT_ID, is_bot=True, first_name="tasktrackerbot"),
+        text="#1 book the movers",
+    )
+    press = CallbackQuery(
+        id="1",
+        from_user=TelegramUser(id=ALEX_ID, is_bot=False, first_name="Alex", username="alex"),
+        chat_instance="x",
+        message=card,
+        data="t:done:1",
+    )
+
+    registered = register_presser(press, db)
+
+    assert registered is not None
+    assert registered.telegram_id == ALEX_ID
+    assert [row["telegram_id"] for row in db.query("SELECT telegram_id FROM users")] == [ALEX_ID]

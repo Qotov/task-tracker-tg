@@ -64,6 +64,16 @@ CASES = [
     Case("dentist 20/09/2026", title="dentist", due="2026-09-20 09:00"),
     Case("renew the carte vitale 01/03", title="renew the carte vitale", due="2027-03-01 09:00"),
     Case("renew insurance 2026-12-31", title="renew insurance", due="2026-12-31 09:00"),
+    # --- month names, because people write them ------------------------------
+    Case("book the movers Sep 24", title="book the movers", due="2026-09-24 09:00"),
+    Case("call the mairie 24 Sep", title="call the mairie", due="2026-09-24 09:00"),
+    Case("dentist September 24", title="dentist", due="2026-09-24 09:00"),
+    Case("dentist 24 September 14:30", title="dentist", due="2026-09-24 14:30"),
+    Case("pay the timbre 24 sep 2027", title="pay the timbre", due="2027-09-24 09:00"),
+    Case("renew the carte 1 Mar", title="renew the carte", due="2027-03-01 09:00"),
+    # a month name on its own is just a word
+    Case("march to the mairie", title="march to the mairie"),
+    Case("the movers may come", title="the movers may come"),
     # --- relative dates -----------------------------------------------------
     Case("send the scans +3d", title="send the scans", due="2026-09-18 09:00"),
     Case("send the scans +2w", title="send the scans", due="2026-09-29 09:00"),
