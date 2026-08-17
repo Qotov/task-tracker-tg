@@ -56,15 +56,21 @@ gets a quiet nudge naming it. And a due date landing on a *jour férié* is
 flagged, because the mairie will be shut.
 
 In a private chat a keyboard sits under the text field with **Today**, **Week**,
-**Overdue**, **Mine**, **Board** and **Menu**. Every list also puts an `#id`
-button under it, so you can open a task and act on it without typing its number.
+**Month**, **Overdue**, **Mine**, **Board**, **New task** and **Menu**. The menu
+leads with **➕ New task**, which asks once and then reads the answer with the
+same parser as a typed message. Every list also puts an `#id` button under it, so
+you can open a task and act on it without typing its number.
+
+**Month** covers the next thirty days grouped by week — *This week*, *Next week*,
+*Week of Mon 05 Oct* — which is far enough out to see a mairie appointment coming.
 
 `/board` draws the tracker: how much of today is done, what is late or waiting,
 a bar chart of the next seven days, who is carrying what, open work per project,
 and the next three things due.
 
-Commands: `/menu`, `/board`, `/add`, `/sub`, `/done`, `/drop`, `/due`, `/own`,
-`/note`, `/today`, `/week`, `/overdue`, `/mine`, `/help`, `/start`.
+Commands: `/menu`, `/new`, `/board`, `/add`, `/sub`, `/done`, `/drop`, `/due`,
+`/own`, `/note`, `/today`, `/week`, `/month`, `/overdue`, `/mine`, `/help`,
+`/start`.
 
 ## Development
 

@@ -1,5 +1,17 @@
 # PLAN
 
+## Adding and a month view — done
+
+Asked for directly: a way to add a task from the menu, and a month alongside the
+week.
+
+| File | What changed |
+| --- | --- |
+| `bot/render.py` | `➕ New task` leading the menu, `📆 Month` in both keyboards, `month_list` grouped by week, the guided prompt and its Cancel button. |
+| `bot/handlers/callbacks.py` | `start_new_task`, the `new` and `cancel` menu actions, and the `new` branch of the prompt answer. |
+| `bot/handlers/commands.py` | `/new`, `/month`, and the two new home-keyboard labels. |
+| `bot/services/tasks.py` | `list_month` and `list_ahead`, shared with `list_week`. |
+
 ## Two-people pass — done
 
 Asked for directly: month-scale reschedule buttons, whatever helps when two

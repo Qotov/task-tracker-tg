@@ -8,7 +8,7 @@ section 13: a short prefix, an action, and the task id — `t:done:12`.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from zoneinfo import ZoneInfo
 
@@ -31,6 +31,7 @@ NOTHING_TODAY = "Nothing due today. 🎉"
 NOTHING_OPEN = "No open tasks here. 🎉"
 NOTHING_OVERDUE = "Nothing overdue. 🎉"
 NOTHING_THIS_WEEK = "Nothing due in the next seven days."
+NOTHING_THIS_MONTH = "Nothing due in the next thirty days."
 UNKNOWN_TASK = "There is no task <b>#{task_id}</b>."
 BAD_TASK_REF = "Give me a task id, like <code>/done 12</code>."
 NO_PARTNER = "Nobody else has started the bot yet."
@@ -42,12 +43,24 @@ SUBTASK_EXPIRED = (
 NOTE_PROMPT = "What should I note on #{task_id}? Send it in your next message."
 NOTE_EXPIRED = "That note prompt was more than five minutes old, so I let it go."
 
+NEW_TASK_PROMPT = (
+    "➕ <b>What needs doing?</b>\n"
+    "Send it in one message. Anything you put in it is understood:\n"
+    "· <b>@name</b> — whose it is (leave it out and it is yours)\n"
+    "· <b>#project</b> — which pile it belongs to\n"
+    "· <b>tomorrow</b>, <b>20/09</b>, <b>+3d</b>, <b>fri 18:00</b> — when it is due\n\n"
+    "<i>@sasha call the landlord tomorrow #move</i>"
+)
+CANCELLED = "Nothing added."
+
 #: Labels on the keyboard under the text field, matched back in the handlers.
 HOME_TODAY = "📅 Today"
 HOME_WEEK = "🗓 Week"
+HOME_MONTH = "📆 Month"
 HOME_OVERDUE = "⚠️ Overdue"
 HOME_MINE = "📋 Mine"
 HOME_BOARD = "📊 Board"
+HOME_NEW = "➕ New task"
 HOME_MENU = "☰ Menu"
 
 #: How many tasks in a list get their own "open this one" button.
@@ -107,6 +120,7 @@ def help_text() -> str:
         "· a due date on a <i>jour férié</i> is flagged — the mairie will be shut\n\n"
         "<b>Commands</b>\n"
         "/menu — the button menu\n"
+        "/new — add a task, guided\n"
         "/board — the tracker board\n"
         "/add &lt;text&gt; — add a task\n"
         "/sub &lt;id&gt; &lt;text&gt; — add a subtask under it\n"
@@ -117,6 +131,7 @@ def help_text() -> str:
         "/note &lt;id&gt; &lt;text&gt; — append a dated note\n"
         "/today — due today or earlier, both of us\n"
         "/week — the next seven days\n"
+        "/month — the next thirty, grouped by week\n"
         "/overdue — everything past due\n"
         "/mine — your open tasks\n"
         "/help — this message"
@@ -186,11 +201,23 @@ def reschedule_keyboard(task: Task) -> InlineKeyboardMarkup:
 
 
 def menu_keyboard() -> InlineKeyboardMarkup:
-    """The inline menu: every list the bot can show, one press away."""
+    """The inline menu: adding a task first, then every list, one press away."""
     builder = InlineKeyboardBuilder()
-    builder.row(_view_button("📅 Today", "today"), _view_button("🗓 Week", "week"))
+    builder.row(_view_button("➕ New task", "new"))
+    builder.row(
+        _view_button("📅 Today", "today"),
+        _view_button("🗓 Week", "week"),
+        _view_button("📆 Month", "month"),
+    )
     builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("📋 Mine", "mine"))
     builder.row(_view_button("📊 Board", "board"), _view_button("❓ Help", "help"))
+    return builder.as_markup()
+
+
+def cancel_keyboard() -> InlineKeyboardMarkup:
+    """Shown under a prompt, so changing your mind does not need a stray message."""
+    builder = InlineKeyboardBuilder()
+    builder.row(_view_button("✖️ Cancel", "cancel"))
     return builder.as_markup()
 
 
@@ -215,9 +242,17 @@ def home_keyboard() -> ReplyKeyboardMarkup:
     """The keyboard under the text field, in private chats: always one tap away."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=HOME_TODAY), KeyboardButton(text=HOME_WEEK)],
-            [KeyboardButton(text=HOME_OVERDUE), KeyboardButton(text=HOME_MINE)],
-            [KeyboardButton(text=HOME_BOARD), KeyboardButton(text=HOME_MENU)],
+            [
+                KeyboardButton(text=HOME_TODAY),
+                KeyboardButton(text=HOME_WEEK),
+                KeyboardButton(text=HOME_MONTH),
+            ],
+            [
+                KeyboardButton(text=HOME_OVERDUE),
+                KeyboardButton(text=HOME_MINE),
+                KeyboardButton(text=HOME_BOARD),
+            ],
+            [KeyboardButton(text=HOME_NEW), KeyboardButton(text=HOME_MENU)],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -363,6 +398,46 @@ def week_list(
         rows = "\n".join(_row(task, now=now, tz=tz, owners=owners, with_time=True) for task in due)
         blocks.append(f"<b>{when:%a %d %b}</b>\n{rows}")
     return f"{header}\n\n" + "\n\n".join(blocks)
+
+
+def month_list(
+    tasks: Iterable[Task],
+    owners: Mapping[int, User],
+    *,
+    now: datetime,
+    tz: ZoneInfo = PARIS,
+) -> str:
+    """The next thirty days, grouped by week — a month of single days would not read."""
+    grouped: dict[date, list[Task]] = {}
+    for task in tasks:
+        if task.due_at is None:  # pragma: no cover - the query only returns dated tasks
+            continue
+        local = task.due_at.astimezone(tz).date()
+        grouped.setdefault(local - timedelta(days=local.weekday()), []).append(task)
+
+    header = "<b>The month ahead</b>"
+    if not grouped:
+        return f"{header}\n\n{NOTHING_THIS_MONTH}"
+
+    this_week = _monday_of(now.astimezone(tz).date())
+    blocks: list[str] = []
+    for monday, due in sorted(grouped.items()):
+        rows = "\n".join(_row(task, now=now, tz=tz, owners=owners) for task in due)
+        blocks.append(f"<b>{_week_label(monday, this_week)}</b>\n{rows}")
+    return f"{header}\n\n" + "\n\n".join(blocks)
+
+
+def _monday_of(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _week_label(monday: date, this_week: date) -> str:
+    weeks = (monday - this_week).days // 7
+    if weeks == 0:
+        return "This week"
+    if weeks == 1:
+        return "Next week"
+    return f"Week of {monday:%a %d %b}"
 
 
 def overdue_list(

@@ -7,12 +7,14 @@ from datetime import UTC, datetime
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot import render
 from bot.config import Config
 from bot.db import Database
 from bot.handlers import answer_creation, build_view, owner_of, register_sender, send_card
+from bot.handlers.callbacks import start_new_task
 from bot.parser import parse_task_ref, parse_when
 from bot.services import tasks as task_service
 from bot.services.users import User, get_by_short
@@ -23,9 +25,11 @@ router = Router(name="commands")
 HOME_BUTTONS = {
     render.HOME_TODAY: "today",
     render.HOME_WEEK: "week",
+    render.HOME_MONTH: "month",
     render.HOME_OVERDUE: "overdue",
     render.HOME_MINE: "mine",
     render.HOME_BOARD: "board",
+    render.HOME_NEW: "new",
     render.HOME_MENU: "menu",
 }
 
@@ -78,12 +82,27 @@ async def cmd_board(message: Message, db: Database, config: Config) -> None:
 
 
 @router.message(F.text.in_(HOME_BUTTONS))
-async def home_button(message: Message, db: Database, config: Config) -> None:
+async def home_button(message: Message, state: FSMContext, db: Database, config: Config) -> None:
     """The keyboard under the text field sends plain text; map it back to a view."""
     user = register_sender(message, db)
     if user is None:  # pragma: no cover - the whitelist guarantees a sender
         return
-    await _show_view(HOME_BUTTONS[message.text or ""], message, db, user=user, config=config)
+    view = HOME_BUTTONS[message.text or ""]
+    if view == "new":
+        await start_new_task(message, state)
+        return
+    await _show_view(view, message, db, user=user, config=config)
+
+
+@router.message(Command("new"))
+async def cmd_new(message: Message, state: FSMContext, db: Database) -> None:
+    register_sender(message, db)
+    await start_new_task(message, state)
+
+
+@router.message(Command("month"))
+async def cmd_month(message: Message, db: Database, config: Config) -> None:
+    await _view_command("month", message, db, config)
 
 
 @router.message(Command("add"))

@@ -139,17 +139,24 @@ def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, alex: User
     assert "t:when_back:1" in _payloads(markup)
 
 
-def test_the_menu_reaches_every_view() -> None:
+def test_the_menu_leads_with_adding_and_reaches_every_view() -> None:
     markup = render.menu_keyboard()
 
     assert _payloads(markup) == [
+        "m:new",
         "m:today",
         "m:week",
+        "m:month",
         "m:overdue",
         "m:mine",
         "m:board",
         "m:help",
     ]
+    assert _labels(markup)[0] == "➕ New task"
+
+
+def test_a_prompt_can_be_cancelled() -> None:
+    assert _payloads(render.cancel_keyboard()) == ["m:cancel"]
 
 
 def test_a_list_offers_one_button_per_task(db: Database, alex: User) -> None:

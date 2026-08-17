@@ -35,6 +35,9 @@ FOLLOW_UP_DAYS = 7
 #: How many days `/week` covers, counting today.
 WEEK_DAYS = 7
 
+#: How many days `/month` covers, counting today.
+MONTH_DAYS = 30
+
 #: How alike two titles must read before the bot mentions the older one.
 SIMILAR_ENOUGH = 0.82
 
@@ -400,8 +403,18 @@ def list_open_for(db: Database, owner_id: int) -> list[Task]:
 
 def list_week(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
     """Open tasks due in the next seven days, counting today. Earlier ones are `/overdue`."""
+    return list_ahead(db, days=WEEK_DAYS, now=now, tz=tz)
+
+
+def list_month(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+    """The next thirty days — far enough out to see a mairie appointment coming."""
+    return list_ahead(db, days=MONTH_DAYS, now=now, tz=tz)
+
+
+def list_ahead(db: Database, *, days: int, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+    """Open, dated tasks from the start of today to `days` later, earliest first."""
     start = datetime.combine(now.astimezone(tz).date(), time.min, tzinfo=tz)
-    end = start + timedelta(days=WEEK_DAYS)
+    end = start + timedelta(days=days)
     rows = db.query(
         f"""
         SELECT * FROM tasks

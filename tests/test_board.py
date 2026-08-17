@@ -190,10 +190,42 @@ def test_a_single_person_gets_no_comparison_block(db: Database, alex: User) -> N
 def test_every_menu_view_renders(db: Database, alex: User, sasha: User, config: Config) -> None:
     _task(db, "something", due_at=_day(0))
 
-    for view in ("today", "week", "overdue", "mine", "board", "help", "menu"):
+    for view in ("today", "week", "month", "overdue", "mine", "board", "help", "menu"):
         text, markup = build_view(view, db, user=alex, now=NOW, config=config)
         assert text
         assert markup.inline_keyboard
+
+
+def test_the_month_view_groups_by_week(
+    db: Database, alex: User, sasha: User, config: Config
+) -> None:
+    _task(db, "this week", due_at=_day(2))
+    _task(db, "next week", due_at=_day(9))
+    _task(db, "a fortnight out", due_at=_day(20))
+    _task(db, "past the horizon", due_at=_day(45))
+
+    text, _ = build_view("month", db, user=alex, now=NOW, config=config)
+
+    assert "<b>This week</b>" in text
+    assert "<b>Next week</b>" in text
+    assert "<b>Week of Mon 05 Oct</b>" in text
+    assert "this week" in text and "a fortnight out" in text
+    assert "past the horizon" not in text
+
+
+def test_the_month_view_says_when_it_is_empty(db: Database, alex: User, config: Config) -> None:
+    text, _ = build_view("month", db, user=alex, now=NOW, config=config)
+
+    assert render.NOTHING_THIS_MONTH in text
+
+
+def test_the_month_view_reaches_further_than_the_week(db: Database, alex: User) -> None:
+    from bot.services.tasks import list_month, list_week
+
+    _task(db, "in ten days", due_at=_day(10))
+
+    assert [task.title for task in list_month(db, now=NOW)] == ["in ten days"]
+    assert list_week(db, now=NOW) == []
 
 
 def test_the_reschedule_buttons_keep_the_time_of_day(

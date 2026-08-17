@@ -106,6 +106,18 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - Only public holidays are flagged, not weekends: a Saturday task is ordinary, a task due on the 14th of July is a wasted trip.
 - The holiday names stay in French (`Fête nationale`), because that is what the closed door and the mairie website will say.
 
+## Adding from the menu, and a month view (asked for directly)
+
+- **➕ New task** leads the menu, on its own row: adding is the thing this bot exists for, and it should not sit below six ways of looking at what already exists.
+- The button asks once and then hands the answer to the ordinary parser, so `@sasha call the landlord tomorrow #move` works exactly as it does when typed — one flow to learn, not two.
+- The prompt lists the markers with an example rather than walking through owner, project and date as separate questions: four taps to add a task is worse than one sentence.
+- The prompt carries a **Cancel** button, because changing your mind should not require sending a message that becomes a task.
+- A late answer to that prompt still becomes a task, with no expiry: typing it in a private chat would have made one anyway, so throwing it away would be the surprising choice.
+- **📆 Month** joins Today and Week in both keyboards, covering thirty days from today.
+- The month is grouped by week, not by day: thirty day-headers is a wall, and "This week / Next week / Week of Mon 05 Oct" is how the two of them already talk about it.
+- `/week` and `/month` share one `list_ahead` query, so the two views can never disagree about what "open and dated" means.
+- The keyboard under the text field grew to three rows of three; **➕ New task** sits on the last row next to the menu, where a thumb reaches it.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

@@ -59,7 +59,11 @@ class TaskInput(StatesGroup):
 
 @router.callback_query(MenuAction.filter())
 async def on_menu_button(
-    callback: CallbackQuery, callback_data: MenuAction, db: Database, config: Config
+    callback: CallbackQuery,
+    callback_data: MenuAction,
+    state: FSMContext,
+    db: Database,
+    config: Config,
 ) -> None:
     """Every view lives in the same message, so the chat does not fill up with lists."""
     if not isinstance(callback.message, Message):  # pragma: no cover - inaccessible message
@@ -67,6 +71,17 @@ async def on_menu_button(
         return
     user = register_sender(callback.message, db)
     if user is None or callback.from_user is None:  # pragma: no cover - whitelisted senders only
+        await callback.answer()
+        return
+
+    if callback_data.view == "new":
+        await start_new_task(callback.message, state)
+        await callback.answer()
+        return
+
+    if callback_data.view == "cancel":
+        await state.clear()
+        await callback.message.edit_text(render.CANCELLED)
         await callback.answer()
         return
 
@@ -230,6 +245,13 @@ async def _show_keyboard(
 # --- the short dialogues ---------------------------------------------------
 
 
+async def start_new_task(message: Message, state: FSMContext) -> None:
+    """The ➕ button: ask once, and let the parser do the rest of the work."""
+    await state.set_state(TaskInput.waiting_for_text)
+    await state.update_data(task_id=0, kind="new", asked_at=datetime.now(UTC).isoformat())
+    await message.answer(render.NEW_TASK_PROMPT, reply_markup=render.cancel_keyboard())
+
+
 async def _ask_for_text(
     callback: CallbackQuery, state: FSMContext, *, task_id: int, kind: str
 ) -> None:
@@ -258,6 +280,14 @@ async def on_prompt_answer(
 
     now = datetime.now(UTC)
     kind = str(data.get("kind", "sub"))
+
+    if kind == "new":
+        # No deadline on this one: a late answer is still a task, and typing it in
+        # a private chat would have made one anyway.
+        outcome = task_service.create_from_text(db, text, sender=user, now=now, tz=config.tz)
+        await answer_creation(message, outcome, db, now=now, config=config)
+        return
+
     task = task_service.get_task(db, int(data.get("task_id", 0)))
     expired = _has_expired(data.get("asked_at"), now=now)
 

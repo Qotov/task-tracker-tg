@@ -90,6 +90,9 @@ def build_view(
     elif view == "week":
         tasks = task_service.list_week(db, now=now, tz=config.tz)
         text = render.week_list(tasks, owners, now=now, tz=config.tz)
+    elif view == "month":
+        tasks = task_service.list_month(db, now=now, tz=config.tz)
+        text = render.month_list(tasks, owners, now=now, tz=config.tz)
     elif view == "overdue":
         tasks = task_service.list_overdue(db, now=now)
         text = render.overdue_list(tasks, owners, now=now, tz=config.tz)
