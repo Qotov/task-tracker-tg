@@ -27,6 +27,7 @@ from bot.parser import parse_task_ref, parse_when
 from bot.services import docs as doc_service
 from bot.services import tasks as task_service
 from bot.services.export import export_csv, export_json
+from bot.services.recurrence import parse_recurrence
 from bot.services.settings import DASHBOARD_MESSAGE_ID, bind_group, clear_setting
 from bot.services.users import User, get_by_short
 
@@ -49,6 +50,10 @@ SUB_USAGE = "Use <code>/sub 12 pay the timbre fiscal</code>."
 DUE_USAGE = "Use <code>/due 12 tomorrow</code> or <code>/due 12 20/09</code>."
 OWN_USAGE = "Use <code>/own 12 @sasha</code>."
 NOTE_USAGE = "Use <code>/note 12 they asked for a payslip</code>."
+REPEAT_USAGE = (
+    "Use <code>/repeat 12 weekly:mon</code> — also <code>daily</code>, "
+    "<code>monthly:15</code>, <code>yearly:09-20</code>, or <code>off</code>."
+)
 WAIT_USAGE = "Use <code>/wait 12</code>, or <code>/wait 12 20/09</code> to chase it up then."
 BLOCK_USAGE = "Use <code>/block 12 after 7</code> — 12 waits until 7 is done."
 NO_DATE = (
@@ -208,6 +213,30 @@ async def cmd_dash(message: Message, db: Database, config: Config) -> None:
     await message.answer("📌 Rebuilding the pinned dashboard.")
 
 
+@router.message(Command("repeat"))
+async def cmd_repeat(
+    message: Message, command: CommandObject, db: Database, config: Config
+) -> None:
+    """`/repeat 12 weekly:mon`, or `/repeat 12 off` to stop it."""
+    register_sender(message, db)
+    task_id, spec = _split_ref(command.args)
+    if task_id is None or not spec:
+        await message.answer(REPEAT_USAGE)
+        return
+
+    rule = None if spec.strip().lower() in {"off", "never", "none"} else parse_recurrence(spec)
+    if rule is None and spec.strip().lower() not in {"off", "never", "none"}:
+        await message.answer(REPEAT_USAGE)
+        return
+
+    task = task_service.set_recurrence(db, task_id, rule=rule)
+    if task is None:
+        await message.answer(render.UNKNOWN_TASK.format(task_id=task_id))
+        return
+    lead = "🔁 Repeating\n" if rule is not None else "🔁 No longer repeating\n"
+    await send_card(message, db, task, now=datetime.now(UTC), config=config, lead=lead)
+
+
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, db: Database) -> None:
     user = register_sender(message, db)
@@ -272,6 +301,10 @@ async def cmd_done(message: Message, command: CommandObject, db: Database, confi
     await message.answer(
         render.completed(outcome.task, owner_of(db, outcome.task), now=now, tz=config.tz)
     )
+    if outcome.next_instance is not None:
+        await send_card(
+            message, db, outcome.next_instance, now=now, config=config, lead="🔁 Next one\n"
+        )
 
 
 @router.message(Command("drop"))

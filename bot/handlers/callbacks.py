@@ -44,6 +44,9 @@ router = Router(name="callbacks")
 #: How long a "send me the text" prompt stays valid (section 13).
 PROMPT_TIMEOUT = timedelta(minutes=5)
 
+#: Where `_apply` leaves the next turn of a recurring task, for the caller to show.
+_repeated: dict[int, task_service.Task] = {}
+
 #: Which button asks for which date, as whole days from today.
 _RESCHEDULE_DAYS = {"when_today": 0, "when_tomorrow": 1, "when_3d": 3, "when_1w": 7}
 
@@ -168,6 +171,10 @@ async def on_task_button(
         announce_unblocked(db, updated, now=now, config=config)
     if card is not None:
         await refresh_card(card, db, updated, now=now, config=config)
+        if action == "done" and _repeated.get(updated.id) is not None:
+            await send_card(
+                card, db, _repeated.pop(updated.id), now=now, config=config, lead="🔁 Next one\n"
+            )
     await callback.answer(toast)
 
 
@@ -176,7 +183,9 @@ def _apply(
 ) -> tuple[task_service.Task | None, str]:
     """Run the button's effect. Returns the updated task, or None with a reason."""
     if action == "done":
-        outcome = task_service.complete_task(db, task_id, now=now)
+        outcome = task_service.complete_task(db, task_id, now=now, tz=config.tz)
+        if outcome.next_instance is not None and outcome.task is not None:
+            _repeated[outcome.task.id] = outcome.next_instance
         return outcome.task, "Already done" if outcome.already_done else "Done ✅"
     if action == "day1":
         return task_service.shift_due(db, task_id, days=1, now=now, tz=config.tz), "Moved a day on"

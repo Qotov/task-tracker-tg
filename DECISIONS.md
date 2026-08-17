@@ -165,6 +165,20 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - The CSV has a `blocked_by` column and no priority column, which is the schema stated in a form a spreadsheet can read.
 - `scripts/backup.sh` uses `sqlite3 .backup` rather than `cp`, the only safe way to copy a database while the bot is writing to it.
 
+## Phase 7 behaviour
+
+- `docs/TASK.md` never says how a recurrence is set, so `/repeat 12 weekly:mon` does it, with `off` to stop; the card then says "🔁 repeats every Monday" in words rather than showing the stored spec.
+- The next turn is created the moment the current one is closed, not by the scheduler: a repeating task that nobody closes should not pile up copies.
+- The next date is measured from the task's own due date, and from the completion time only when it never had one.
+- The time of day is carried over, so a bin day at 18:30 stays at 18:30.
+- The 31st of a month that has no 31st means its last day, the same clamping rule the parser uses for `+1m`.
+- Subtasks are copied with their dates shifted by the same amount and notes are not copied at all, exactly as section 19 asks: the shape of the job repeats, its history does not.
+- A `recurrence` value that does not parse is ignored rather than raising, so a hand-edited row can never stop a task being closed.
+
+## Command names
+
+- `/new` is the guided "add a task" prompt, which collides with section 7's `/new <template> <date>`. Phase 5 is not built; whoever builds it should rename one of the two — `/from <template>` reads better than renaming the button people use daily.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

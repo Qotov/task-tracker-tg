@@ -25,6 +25,7 @@ from bot.parser import PARIS
 from bot.services.digest import Digest
 from bot.services.docs import Attachment
 from bot.services.holidays import french_holiday
+from bot.services.recurrence import parse_recurrence
 from bot.services.stats import Board
 from bot.services.tasks import Task
 from bot.services.users import User
@@ -121,6 +122,12 @@ def help_text() -> str:
         "· a card says <i>asked by</i> when the other person wrote it for you\n"
         "· writing something the other one already added gets you a quiet nudge\n"
         "· a due date on a <i>jour férié</i> is flagged — the mairie will be shut\n\n"
+        "<b>What I do on my own</b>\n"
+        "· remind you when something is due, and once a day while it is late\n"
+        "· a morning digest at your hour, and a nudge on anything you are waiting for\n"
+        "· never between your quiet hours — it waits for the morning instead\n"
+        "· say in the group when finishing one task frees another\n"
+        "· send a document back when you ask for it\n\n"
         "<b>Commands</b>\n"
         "/menu — the button menu\n"
         "/new — add a task, guided\n"
@@ -132,11 +139,18 @@ def help_text() -> str:
         "/due &lt;id&gt; &lt;date&gt; — change the due date\n"
         "/own &lt;id&gt; @who — hand it over\n"
         "/note &lt;id&gt; &lt;text&gt; — append a dated note\n"
+        "/wait &lt;id&gt; [date] — parked on somebody else\n"
+        "/block &lt;id&gt; after &lt;id&gt; — make one wait for the other\n"
+        "/repeat &lt;id&gt; weekly:mon — or daily, monthly:15, yearly:09-20, off\n"
         "/today — due today or earlier, both of us\n"
         "/week — the next seven days\n"
         "/month — the next thirty, grouped by week\n"
         "/overdue — everything past due\n"
         "/mine — your open tasks\n"
+        "/docs &lt;word&gt; — find a scan\n"
+        "/export — every task as CSV and JSON\n"
+        "/settings — digest hour, quiet hours, escalation\n"
+        "/dash — rebuild the pinned dashboard\n"
         "/help — this message"
     )
 
@@ -310,6 +324,10 @@ def task_card(
         lines.append(f"🇫🇷 {escape(closed_day)} — public holiday, offices will be shut")
     if task.status == "waiting" and task.follow_up_at is not None:
         lines.append(f"⏳ waiting — chase it up {_when(task.follow_up_at, now=now, tz=tz)}")
+    if task.recurrence is not None:
+        rule = parse_recurrence(task.recurrence)
+        if rule is not None:
+            lines.append(f"🔁 repeats {rule.describe()}")
     if task.parent_id is not None:
         lines.append(f"↳ subtask of #{task.parent_id}")
     if task.notes:
@@ -341,6 +359,10 @@ def created(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> 
 
 def completed(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
     return "✅ Done\n" + task_card(task, owner, now=now, tz=tz)
+
+
+def repeated(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+    return "🔁 Next one\n" + task_card(task, owner, now=now, tz=tz)
 
 
 def already_done(task: Task) -> str:

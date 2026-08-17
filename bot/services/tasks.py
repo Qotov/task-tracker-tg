@@ -22,6 +22,7 @@ from bot.parser import (
     ParsedTask,
     parse_task,
 )
+from bot.services.recurrence import Recurrence, next_due, parse_recurrence
 from bot.services.users import User, get_by_short, known_shorts
 
 #: Statuses that still need somebody to do something.
@@ -79,6 +80,8 @@ class CreateOutcome:
 class CompleteOutcome:
     task: Task | None
     already_done: bool = False
+    next_instance: Task | None = None
+    """The next turn of a recurring task, created when this one was closed."""
 
 
 def row_to_task(row: sqlite3.Row) -> Task:
@@ -239,15 +242,78 @@ def _comparable(title: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", title.lower()).split())
 
 
-def complete_task(db: Database, task_id: int, *, now: datetime) -> CompleteOutcome:
-    """Mark a task done. Unblock checks arrive with the dependency phase."""
+def complete_task(
+    db: Database, task_id: int, *, now: datetime, tz: ZoneInfo = PARIS
+) -> CompleteOutcome:
+    """Mark a task done, and set the next turn going if it repeats (section 19, phase 7)."""
     task = get_task(db, task_id)
     if task is None:
         return CompleteOutcome(task=None)
     if task.status == "done":
         return CompleteOutcome(task=task, already_done=True)
     db.execute("UPDATE tasks SET status = 'done', done_at = ? WHERE id = ?", (to_iso(now), task_id))
-    return CompleteOutcome(task=get_task(db, task_id))
+    return CompleteOutcome(
+        task=get_task(db, task_id),
+        next_instance=roll_recurring(db, task, now=now, tz=tz),
+    )
+
+
+def set_recurrence(db: Database, task_id: int, *, rule: Recurrence | None) -> Task | None:
+    """Make a task repeat, or stop it repeating."""
+    if get_task(db, task_id) is None:
+        return None
+    db.execute(
+        "UPDATE tasks SET recurrence = ? WHERE id = ?",
+        (None if rule is None else rule.stored(), task_id),
+    )
+    return get_task(db, task_id)
+
+
+def roll_recurring(db: Database, task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> Task | None:
+    """Create the next turn of a repeating task: subtasks copied, notes not.
+
+    Notes belong to the turn that is finished — "they asked for a payslip" is not
+    true of next month's copy. Subtasks are the shape of the job, so they come.
+    """
+    if task.recurrence is None:
+        return None
+    rule = parse_recurrence(task.recurrence)
+    if rule is None:
+        return None
+
+    base_local = (task.due_at or now).astimezone(tz)
+    next_day = next_due(rule, after=base_local.date())
+    next_due_at = datetime.combine(next_day, base_local.timetz(), tzinfo=None).replace(
+        tzinfo=base_local.tzinfo
+    )
+    shift = next_day - base_local.date()
+
+    upcoming = create_task(
+        db,
+        title=task.title,
+        owner_id=task.owner_id,
+        created_by=task.created_by,
+        now=now,
+        project=task.project,
+        due_at=next_due_at.astimezone(UTC),
+        remind_at=next_due_at.astimezone(UTC),
+        parent_id=task.parent_id,
+    )
+    db.execute("UPDATE tasks SET recurrence = ? WHERE id = ?", (task.recurrence, upcoming.id))
+    for child in list_subtasks(db, task.id):
+        child_due = None if child.due_at is None else child.due_at + shift
+        create_task(
+            db,
+            title=child.title,
+            owner_id=child.owner_id,
+            created_by=child.created_by,
+            now=now,
+            project=child.project,
+            due_at=child_due,
+            remind_at=child_due,
+            parent_id=upcoming.id,
+        )
+    return get_task(db, upcoming.id)
 
 
 def set_due(db: Database, task_id: int, *, due_at: datetime | None) -> Task | None:
