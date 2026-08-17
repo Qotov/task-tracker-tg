@@ -1,5 +1,19 @@
 # PLAN
 
+## Two-people pass — done
+
+Asked for directly: month-scale reschedule buttons, whatever helps when two
+people share the same lists, and something useful that a calendar knows.
+
+| File | What changed |
+| --- | --- |
+| `bot/services/holidays.py` | New. French public holidays, computed (fixed dates plus Easter), no network. |
+| `bot/services/tasks.py` | `find_similar` (duplicate hint) and `copy_for` (one task each for a shared errand). |
+| `bot/render.py` | `+1 month` / `+3 months`, the `👥 Both` button, *asked by* on a card, the `jour férié` warning, `duplicate_hint`. |
+| `bot/handlers/callbacks.py` | Month reschedules and the `Both` copy. |
+| `bot/parser.py` | `add_months` made public for the month buttons. |
+| `tests/test_together.py` | New. Months, attribution, duplicates, twins, holidays. |
+
 ## Interface pass — done
 
 Asked for directly: better card buttons, buttons from the moment the bot starts,

@@ -29,6 +29,7 @@ from bot.handlers import (
     register_sender,
     send_card,
 )
+from bot.parser import add_months
 from bot.render import MenuAction, TaskAction
 from bot.services import tasks as task_service
 from bot.services.users import partner_of
@@ -42,6 +43,9 @@ PROMPT_TIMEOUT = timedelta(minutes=5)
 
 #: Which button asks for which date, as whole days from today.
 _RESCHEDULE_DAYS = {"when_today": 0, "when_tomorrow": 1, "when_3d": 3, "when_1w": 7}
+
+#: The same, in whole months — French paperwork runs on those, not on days.
+_RESCHEDULE_MONTHS = {"when_1m": 1, "when_3m": 3}
 
 
 class TaskInput(StatesGroup):
@@ -108,6 +112,10 @@ async def on_task_button(
         await _ask_for_text(callback, state, task_id=task_id, kind=action)
         return
 
+    if action == "both":
+        await _copy_for_partner(callback, db, task, now=now, config=config)
+        return
+
     if action in {"when", "when_back"}:
         await _show_keyboard(callback, db, task, submenu=action == "when")
         return
@@ -151,6 +159,10 @@ def _apply(
         return _reschedule(
             db, task_id=task_id, days=_RESCHEDULE_DAYS[action], now=now, tz=config.tz
         )
+    if action in _RESCHEDULE_MONTHS:
+        return _reschedule(
+            db, task_id=task_id, months=_RESCHEDULE_MONTHS[action], now=now, tz=config.tz
+        )
     logger.warning("unknown callback action %r", action)
     return None, "I do not know that button."
 
@@ -169,15 +181,36 @@ def _give_away(db: Database, *, task_id: int) -> tuple[task_service.Task | None,
 
 
 def _reschedule(
-    db: Database, *, task_id: int, days: int, now: datetime, tz: ZoneInfo
+    db: Database, *, task_id: int, now: datetime, tz: ZoneInfo, days: int = 0, months: int = 0
 ) -> tuple[task_service.Task | None, str]:
     """Move a task to a day, keeping whatever time of day it already had."""
-    updated = task_service.set_due_date(
-        db, task_id, day=now.astimezone(tz).date() + timedelta(days=days), now=now, tz=tz
-    )
+    target = now.astimezone(tz).date() + timedelta(days=days)
+    if months:
+        target = add_months(target, months)
+    updated = task_service.set_due_date(db, task_id, day=target, now=now, tz=tz)
     if updated is None or updated.due_at is None:  # pragma: no cover - the caller checked
         return updated, "Rescheduled"
     return updated, f"Due {updated.due_at.astimezone(tz):%a %d %b}"
+
+
+async def _copy_for_partner(
+    callback: CallbackQuery,
+    db: Database,
+    task: task_service.Task,
+    *,
+    now: datetime,
+    config: Config,
+) -> None:
+    """Some errands need both of them — two tasks, one owner each, never one shared."""
+    partner = partner_of(db, task.owner_id)
+    if partner is None:
+        await callback.answer(render.NO_PARTNER, show_alert=True)
+        return
+    actor = callback.from_user.id if callback.from_user is not None else task.owner_id
+    twin = task_service.copy_for(db, task, owner_id=partner.telegram_id, created_by=actor, now=now)
+    if isinstance(callback.message, Message):
+        await send_card(callback.message, db, twin, now=now, config=config, lead="👥 Both of you\n")
+    await callback.answer(f"Also on {partner.short}'s list as #{twin.id}")
 
 
 async def _show_keyboard(

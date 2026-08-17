@@ -43,10 +43,17 @@ Any plain message becomes a task:
 time means 09:00 Paris. There are no priorities: the due date carries the urgency.
 
 Everything else is buttons. A todo card carries **Done**, **+1 day**,
-**Waiting**, **→ partner**, **Subtask**, **Note**, **Reschedule** and **Drop**; a
-waiting card swaps in **+7 days** and **To do**; a closed card keeps **Reopen**,
-because closing the wrong task with a thumb is easy. **Reschedule** opens
-Today / Tomorrow / +3 days / Next week / No date on the same card.
+**Waiting**, **→ partner**, **Subtask**, **Both**, **Note**, **Reschedule** and
+**Drop**; a waiting card swaps in **+7 days** and **To do**; a closed card keeps
+**Reopen**, because closing the wrong task with a thumb is easy. **Reschedule**
+opens Today / Tomorrow / +3 days / Next week / +1 month / +3 months / No date on
+the same card.
+
+For two people: **👥 Both** puts a copy of the errand on the other list — a task
+has exactly one owner, so two signatures are two tasks. A card says *asked by
+alex* when the other one wrote it for you. Adding something that already exists
+gets a quiet nudge naming it. And a due date landing on a *jour férié* is
+flagged, because the mairie will be shut.
 
 In a private chat a keyboard sits under the text field with **Today**, **Week**,
 **Overdue**, **Mine**, **Board** and **Menu**. Every list also puts an `#id`

@@ -92,6 +92,20 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `bot/services/stats.py` holds the counting and `render.py` the drawing, so the Phase 6 pinned dashboard can reuse both.
 - The board ranks by due date and count only; there is still no priority anywhere in this bot.
 
+## Working as two people (asked for directly)
+
+- **Reschedule** gained **+1 month** and **+3 months**, because French paperwork is measured in months — a `titre de séjour` renewal or a mairie backlog is never three days away.
+- Month arithmetic reuses the parser's `add_months`, so 31 August plus three months is 30 November rather than spilling into December.
+- A card says **asked by <name>** when the person who wrote it is not the person who owns it: with two people the real question is not what the task is, it is who put it there.
+- **👥 Both** copies a task onto the other person's list instead of sharing one task, because `owner_id` is singular and stays that way; two signatures at the mairie are two tasks.
+- The copy is an independent task: closing one leaves the other open, which is the whole point of tracking them separately.
+- Adding something that reads like an already-open task gets a hint naming the older one, since two people in two rooms writing "call the landlord" is this bot's most likely duplicate.
+- The hint never blocks the second task — being wrong about a duplicate must cost nothing.
+- Similarity is `difflib` on lowercased, punctuation-free titles at 0.82, and titles under six characters are skipped; a standard-library ratio is predictable and needs no dependency.
+- French public holidays are computed locally (fixed dates plus Easter by Meeus/Jones/Butcher) rather than fetched: the rules have not changed since 1953, and a card that needs the network to render is a card that fails on a train.
+- Only public holidays are flagged, not weekends: a Saturday task is ordinary, a task due on the 14th of July is a wasted trip.
+- The holiday names stay in French (`Fête nationale`), because that is what the closed door and the mairie website will say.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

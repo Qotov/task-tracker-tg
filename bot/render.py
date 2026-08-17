@@ -22,6 +22,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.parser import PARIS
+from bot.services.holidays import french_holiday
 from bot.services.stats import Board
 from bot.services.tasks import Task
 from bot.services.users import User
@@ -96,8 +97,14 @@ def help_text() -> str:
         "A date without a time means 09:00. There are no priorities: "
         "the due date is the urgency.\n\n"
         "Every task card has buttons — <b>Done</b>, <b>+1 day</b>, <b>Waiting</b>, "
-        "<b>Subtask</b>, <b>Note</b>, <b>Reschedule</b>, <b>Drop</b>, and <b>Reopen</b> "
-        "once it is closed — so you rarely need a command at all.\n\n"
+        "<b>Subtask</b>, <b>Note</b>, <b>Reschedule</b> (up to +3 months), <b>Drop</b>, "
+        "and <b>Reopen</b> once it is closed — so you rarely need a command at all.\n\n"
+        "<b>For the two of you</b>\n"
+        "· <b>👤 →</b> hands a task over · <b>👥 Both</b> makes a copy for the other one, "
+        "since a task has exactly one owner\n"
+        "· a card says <i>asked by</i> when the other person wrote it for you\n"
+        "· writing something the other one already added gets you a quiet nudge\n"
+        "· a due date on a <i>jour férié</i> is flagged — the mairie will be shut\n\n"
         "<b>Commands</b>\n"
         "/menu — the button menu\n"
         "/board — the tracker board\n"
@@ -132,11 +139,13 @@ def task_keyboard(task: Task, *, partner: User | None = None) -> InlineKeyboardM
             _button("📅 +1 day", "day1", task.id),
             _button("⏳ Waiting", "wait", task.id),
         )
-        second = [_button("➕ Subtask", "sub", task.id), _button("📝 Note", "note", task.id)]
+        second = [_button("➕ Subtask", "sub", task.id)]
         if partner is not None:
             second.insert(0, _button(f"👤 → {partner.short}", "give", task.id))
+            second.append(_button("👥 Both", "both", task.id))
         builder.row(*second)
         builder.row(
+            _button("📝 Note", "note", task.id),
             _button("🕘 Reschedule", "when", task.id),
             _button("🗑 Drop", "drop", task.id),
         )
@@ -166,6 +175,10 @@ def reschedule_keyboard(task: Task) -> InlineKeyboardMarkup:
     )
     builder.row(
         _button("Next week", "when_1w", task.id),
+        _button("+1 month", "when_1m", task.id),
+        _button("+3 months", "when_3m", task.id),
+    )
+    builder.row(
         _button("✖️ No date", "when_none", task.id),
         _button("← Back", "when_back", task.id),
     )
@@ -225,17 +238,33 @@ def _view_button(text: str, view: str) -> InlineKeyboardButton:
 # --- cards -----------------------------------------------------------------
 
 
-def task_card(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
-    """The block shown after a task is created or changed."""
+def task_card(
+    task: Task,
+    owner: User,
+    *,
+    now: datetime,
+    tz: ZoneInfo = PARIS,
+    creator: User | None = None,
+) -> str:
+    """The block shown after a task is created or changed.
+
+    `creator` is passed only when somebody else wrote the task, because "who asked
+    me to do this" is the question two people actually have.
+    """
     lines = [f"{_status_mark(task)}#{task.id} <b>{escape(task.title)}</b>"]
 
     details = [f"👤 {escape(owner.short)}"]
+    if creator is not None and creator.telegram_id != owner.telegram_id:
+        details[0] += f" · asked by {escape(creator.short)}"
     if task.due_at is not None:
         details.append(f"📅 {_when(task.due_at, now=now, tz=tz)}")
     if task.project is not None:
         details.append(f"🏷 #{escape(task.project)}")
     lines.append(" · ".join(details))
 
+    closed_day = _closed_day(task.due_at, tz=tz)
+    if closed_day is not None:
+        lines.append(f"🇫🇷 {escape(closed_day)} — public holiday, offices will be shut")
     if task.status == "waiting" and task.follow_up_at is not None:
         lines.append(f"⏳ waiting — chase it up {_when(task.follow_up_at, now=now, tz=tz)}")
     if task.parent_id is not None:
@@ -243,6 +272,20 @@ def task_card(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -
     if task.notes:
         lines.append("📝 " + escape(task.notes).replace("\n", "\n   "))
     return "\n".join(lines)
+
+
+def duplicate_hint(existing: Task) -> str:
+    """Said when a new task reads like one that is already on a list."""
+    return (
+        f"👀 <b>#{existing.id} {escape(existing.title)}</b> is already open and looks like "
+        "the same thing — close one if it is."
+    )
+
+
+def _closed_day(due_at: datetime | None, *, tz: ZoneInfo) -> str | None:
+    if due_at is None:
+        return None
+    return french_holiday(due_at.astimezone(tz).date())
 
 
 def _status_mark(task: Task) -> str:

@@ -283,7 +283,7 @@ def _resolve_date(match: re.Match[str], today: date) -> date | None:
             return today + timedelta(days=amount)
         if unit == "w":
             return today + timedelta(weeks=amount)
-        return _add_months(today, amount)
+        return add_months(today, amount)
 
     word = match.group("word")
     if word is not None:
@@ -305,7 +305,7 @@ def _safe_date(year: int, month: int, day: int) -> date | None:
         return None
 
 
-def _add_months(start: date, months: int) -> date:
+def add_months(start: date, months: int) -> date:
     """Add whole months, clamping to the end of the shorter month (31 Jan + 1m = 28 Feb)."""
     index = start.month - 1 + months
     year = start.year + index // 12

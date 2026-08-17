@@ -6,9 +6,11 @@ layer between Telegram and these functions, and so the tests never need a bot.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 from bot.db import Database, from_iso, to_iso
@@ -32,6 +34,9 @@ FOLLOW_UP_DAYS = 7
 
 #: How many days `/week` covers, counting today.
 WEEK_DAYS = 7
+
+#: How alike two titles must read before the bot mentions the older one.
+SIMILAR_ENOUGH = 0.82
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,8 @@ class CreateOutcome:
     task: Task | None
     warnings: tuple[str, ...] = ()
     error: str | None = None
+    duplicate: Task | None = None
+    """An open task that looks like the same errand — the other one probably wrote it."""
 
 
 @dataclass(frozen=True)
@@ -161,6 +168,7 @@ def create_from_text(
     if not parsed.ok:
         return CreateOutcome(task=None, warnings=parsed.warnings, error=parsed.error)
 
+    duplicate = find_similar(db, parsed.title)
     task = create_task(
         db,
         title=parsed.title,
@@ -172,7 +180,56 @@ def create_from_text(
         remind_at=parsed.remind_at,
         parent_id=None if parent is None else parent.id,
     )
-    return CreateOutcome(task=task, warnings=parsed.warnings)
+    return CreateOutcome(task=task, warnings=parsed.warnings, duplicate=duplicate)
+
+
+def find_similar(db: Database, title: str, *, threshold: float = SIMILAR_ENOUGH) -> Task | None:
+    """An open task that reads like the same errand.
+
+    Two people adding "call the landlord" from two rooms is the failure mode this
+    exists for. It never blocks the second task — it only points at the first.
+    """
+    wanted = _comparable(title)
+    if len(wanted) < 6:
+        return None
+    best: Task | None = None
+    best_ratio = threshold
+    for task in _open_tasks(db):
+        ratio = SequenceMatcher(None, wanted, _comparable(task.title)).ratio()
+        if ratio >= best_ratio:
+            best, best_ratio = task, ratio
+    return best
+
+
+def copy_for(db: Database, task: Task, *, owner_id: int, created_by: int, now: datetime) -> Task:
+    """The same errand on the other person's list — two tasks, one owner each.
+
+    A job both of them have to do (two signatures, two appointments) cannot be one
+    task: `owner_id` is singular and stays that way.
+    """
+    return create_task(
+        db,
+        title=task.title,
+        owner_id=owner_id,
+        created_by=created_by,
+        now=now,
+        project=task.project,
+        due_at=task.due_at,
+        remind_at=task.remind_at,
+        parent_id=task.parent_id,
+    )
+
+
+def _open_tasks(db: Database) -> list[Task]:
+    rows = db.query(
+        f"SELECT * FROM tasks WHERE status IN ({_placeholders(OPEN_STATUSES)})", OPEN_STATUSES
+    )
+    return [row_to_task(row) for row in rows]
+
+
+def _comparable(title: str) -> str:
+    """Lowercase words only, so punctuation and spacing do not hide a repeat."""
+    return " ".join(re.sub(r"[^\w\s]", " ", title.lower()).split())
 
 
 def complete_task(db: Database, task_id: int, *, now: datetime) -> CompleteOutcome:

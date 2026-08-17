@@ -44,7 +44,13 @@ def owner_of(db: Database, task: Task) -> User:
 
 
 def card_text(db: Database, task: Task, *, now: datetime, config: Config) -> str:
-    return render.task_card(task, owner_of(db, task), now=now, tz=config.tz)
+    return render.task_card(
+        task,
+        owner_of(db, task),
+        now=now,
+        tz=config.tz,
+        creator=get_user(db, task.created_by),
+    )
 
 
 def card_markup(db: Database, task: Task) -> InlineKeyboardMarkup | None:
@@ -110,7 +116,10 @@ async def answer_creation(
             render.with_warnings(outcome.error or render.BAD_TASK_REF, outcome.warnings)
         )
         return
+    warnings = list(outcome.warnings)
+    if outcome.duplicate is not None:
+        warnings.append(render.duplicate_hint(outcome.duplicate))
     text = render.with_warnings(
-        "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), outcome.warnings
+        "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), warnings
     )
     await message.answer(text, reply_markup=card_markup(db, outcome.task))

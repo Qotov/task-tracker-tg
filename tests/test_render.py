@@ -65,6 +65,7 @@ def test_a_todo_card_can_do_everything_without_typing(
         "⏳ Waiting",
         "👤 → sasha",
         "➕ Subtask",
+        "👥 Both",
         "📝 Note",
         "🕘 Reschedule",
         "🗑 Drop",
@@ -75,6 +76,7 @@ def test_a_todo_card_can_do_everything_without_typing(
         "t:wait:1",
         "t:give:1",
         "t:sub:1",
+        "t:both:1",
         "t:note:1",
         "t:when:1",
         "t:drop:1",
@@ -121,8 +123,19 @@ def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, alex: User
 
     markup = render.reschedule_keyboard(task)
 
-    assert _labels(markup) == ["Today", "Tomorrow", "+3 days", "Next week", "✖️ No date", "← Back"]
+    assert _labels(markup) == [
+        "Today",
+        "Tomorrow",
+        "+3 days",
+        "Next week",
+        "+1 month",
+        "+3 months",
+        "✖️ No date",
+        "← Back",
+    ]
     assert "t:when_tomorrow:1" in _payloads(markup)
+    assert "t:when_1m:1" in _payloads(markup)
+    assert "t:when_3m:1" in _payloads(markup)
     assert "t:when_back:1" in _payloads(markup)
 
 
