@@ -11,6 +11,7 @@ from bot.db import Database
 GROUP_CHAT_ID = "group_chat_id"
 DASHBOARD_MESSAGE_ID = "dashboard_message_id"
 LAST_TICK = "last_tick"
+LLM_LAST_ERROR = "llm_last_error"
 
 
 def get_setting(db: Database, key: str) -> str | None:

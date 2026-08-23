@@ -48,6 +48,6 @@ def config(tmp_path: Path) -> Config:
         db_path=tmp_path / "tasks.db",
         tz_name="Europe/Paris",
         gemini_api_key=None,
-        gemini_model="gemini-2.5-flash-lite",
+        gemini_model="gemini-3.5-flash-lite",
         backup_chat_id=None,
     )

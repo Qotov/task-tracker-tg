@@ -108,8 +108,13 @@ async def read_task(
     tz: ZoneInfo = DEFAULT_TZ,
     shorts: tuple[str, ...] = (),
     transport: Transport | None = None,
+    on_error: Callable[[str | None], None] | None = None,
 ) -> Draft | None:
-    """Ask the model. Returns None on any problem at all — the caller keeps the rules."""
+    """Ask the model. Returns None on any problem at all — the caller keeps the rules.
+
+    `on_error` is called with the reason on failure and with None on success, so
+    somewhere visible can say why an optional feature is doing nothing.
+    """
     if not config.gemini_api_key:
         return None
     payload = {
@@ -126,11 +131,16 @@ async def read_task(
     send = transport or _post
     try:
         answer = await send(url, payload, config.gemini_api_key)
-        return _to_draft(answer, now=now, tz=tz)
-    except Exception:
+        draft = _to_draft(answer, now=now, tz=tz)
+    except Exception as error:
         # A second-chance parser that can break task creation is worse than none.
-        logger.warning("the model could not be reached or understood", exc_info=True)
+        logger.warning("the model could not be reached or understood: %s", error, exc_info=True)
+        if on_error is not None:
+            on_error(f"{type(error).__name__}: {error}"[:200])
         return None
+    if on_error is not None:
+        on_error(None)
+    return draft
 
 
 async def _post(url: str, payload: dict[str, Any], api_key: str) -> dict[str, Any]:
@@ -142,7 +152,10 @@ async def _post(url: str, payload: dict[str, Any], api_key: str) -> dict[str, An
         aiohttp.ClientSession(timeout=timeout) as session,
         session.post(url, json=payload, headers={"x-goog-api-key": api_key}) as response,
     ):
-        response.raise_for_status()
+        if response.status >= 400:
+            # Google explains itself in the body; raise_for_status throws it away.
+            detail = (await response.text())[:300]
+            raise RuntimeError(f"HTTP {response.status}: {detail}")
         body: dict[str, Any] = await response.json()
         return body
 

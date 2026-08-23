@@ -209,6 +209,10 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 
 - `/health` says whether the second-chance parser is on, names the model, and states the trigger in one line — an optional feature nobody can see the state of is one nobody trusts.
 
+- The default model is `gemini-3.5-flash-lite`: `gemini-2.5-flash-lite` is closed to new keys and answers 404, which is exactly the kind of thing a pinned model name does eventually. `GEMINI_MODEL` in `.env` overrides it without touching the code.
+- A failed call is remembered in `settings` and shown by `/health` with the reason Google gave, because the first real failure was a 404 that reached only the log while the person watching saw a card that simply never changed.
+- The HTTP body is kept when a call fails: `raise_for_status` throws away the one sentence that says why.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

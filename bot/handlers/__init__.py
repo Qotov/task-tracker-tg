@@ -15,7 +15,7 @@ from bot.config import Config
 from bot.db import Database
 from bot.services import llm, outbox
 from bot.services import tasks as task_service
-from bot.services.settings import group_chat_id
+from bot.services.settings import LLM_LAST_ERROR, clear_setting, group_chat_id, set_setting
 from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
 from bot.services.users import (
@@ -139,6 +139,14 @@ async def refresh_card(
             raise
 
 
+def _remember_llm_error(db: Database, reason: str | None) -> None:
+    """So /health can say why an optional feature is quietly doing nothing."""
+    if reason is None:
+        clear_setting(db, LLM_LAST_ERROR)
+    else:
+        set_setting(db, LLM_LAST_ERROR, reason)
+
+
 def build_view(
     view: str, db: Database, *, user: User, now: datetime, config: Config
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -222,6 +230,7 @@ async def second_chance(
         now=now,
         tz=config.tz,
         shorts=tuple(sorted(known_shorts(db))),
+        on_error=lambda reason: _remember_llm_error(db, reason),
     )
     if draft is None or not draft.is_useful:
         return

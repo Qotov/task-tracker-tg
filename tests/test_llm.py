@@ -221,9 +221,51 @@ def test_health_says_whether_the_second_chance_parser_is_on(db: Database) -> Non
     from bot.services.health import check
 
     off = render.health(check(db, now=NOW))
-    on = render.health(check(db, now=NOW, llm_model="gemini-2.5-flash-lite"))
+    on = render.health(check(db, now=NOW, llm_model="gemini-3.5-flash-lite"))
 
     assert "off — no GEMINI_API_KEY" in off
     assert "nothing leaves this machine" in off
-    assert "on (gemini-2.5-flash-lite)" in on
+    assert "on (gemini-3.5-flash-lite)" in on
     assert "over eight words has no date" in on
+
+
+def test_a_failed_call_is_remembered_and_shown(db: Database, config: Config) -> None:
+    """A 404 that only reaches the log is a feature nobody can debug."""
+    from bot.handlers import _remember_llm_error
+    from bot.services.health import check
+
+    async def refuses(url: str, payload: dict[str, Any], api_key: str) -> dict[str, Any]:
+        raise RuntimeError("HTTP 404: model not found")
+
+    asyncio.run(
+        llm.read_task(
+            LONG,
+            config=_with_key(config),
+            now=NOW,
+            transport=refuses,
+            on_error=lambda reason: _remember_llm_error(db, reason),
+        )
+    )
+
+    text = render.health(check(db, now=NOW, llm_model="gemini-3.5-flash-lite"))
+    assert "failed last time" in text
+    assert "HTTP 404: model not found" in text
+
+
+def test_a_working_call_clears_the_old_failure(db: Database, config: Config) -> None:
+    from bot.handlers import _remember_llm_error
+    from bot.services.health import check
+
+    _remember_llm_error(db, "RuntimeError: HTTP 404")
+
+    asyncio.run(
+        llm.read_task(
+            LONG,
+            config=_with_key(config),
+            now=NOW,
+            transport=_transport(_answer(due="2026-09-30")),
+            on_error=lambda reason: _remember_llm_error(db, reason),
+        )
+    )
+
+    assert "failed last time" not in render.health(check(db, now=NOW, llm_model="m"))

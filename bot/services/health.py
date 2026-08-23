@@ -17,6 +17,7 @@ from bot.services import outbox
 from bot.services.settings import (
     DASHBOARD_MESSAGE_ID,
     LAST_TICK,
+    LLM_LAST_ERROR,
     get_int,
     get_setting,
     group_chat_id,
@@ -36,6 +37,7 @@ class Health:
     dashboard_pinned: bool
     open_tasks: int
     llm_model: str | None
+    llm_error: str | None
 
     @property
     def tick_age_seconds(self) -> float | None:
@@ -67,6 +69,7 @@ def check(
         dashboard_pinned=get_int(db, DASHBOARD_MESSAGE_ID) is not None,
         open_tasks=_open_count(db),
         llm_model=llm_model,
+        llm_error=get_setting(db, LLM_LAST_ERROR),
     )
 
 

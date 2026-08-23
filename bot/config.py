@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_DB_PATH = "tasks.db"
 DEFAULT_TZ = "Europe/Paris"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 #: Which country's public holidays to flag on a due date. `off` disables the whole
 #: feature; only `FR` ships a table today.
