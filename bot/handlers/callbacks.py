@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
@@ -31,7 +32,7 @@ from bot.handlers import (
     register_sender,
     send_card,
 )
-from bot.parser import add_months
+from bot.parser import add_months, parse_when
 from bot.render import MenuAction, SettingAction, TaskAction
 from bot.services import docs as doc_service
 from bot.services import tasks as task_service
@@ -153,6 +154,10 @@ async def on_task_button(
 
     if action in {"sub", "note"}:
         await _ask_for_text(callback, state, task_id=task_id, kind=action)
+        return
+
+    if action == "when_type":
+        await _ask_for_text(callback, state, task_id=task_id, kind="due")
         return
 
     if action == "both":
@@ -293,7 +298,11 @@ async def _ask_for_text(
 ) -> None:
     await state.set_state(TaskInput.waiting_for_text)
     await state.update_data(task_id=task_id, kind=kind, asked_at=datetime.now(UTC).isoformat())
-    prompt = render.SUBTASK_PROMPT if kind == "sub" else render.NOTE_PROMPT
+    prompt = {
+        "sub": render.SUBTASK_PROMPT,
+        "note": render.NOTE_PROMPT,
+        "due": render.DUE_PROMPT,
+    }[kind]
     if isinstance(callback.message, Message):
         await callback.message.answer(prompt.format(task_id=task_id))
     await callback.answer()
@@ -332,13 +341,23 @@ async def on_prompt_answer(
     expired = _has_expired(data.get("asked_at"), now=now)
 
     if task is None or expired:
-        if kind == "note":
-            await message.answer(render.NOTE_EXPIRED)
+        if kind in {"note", "due"}:
+            await message.answer(render.NOTE_EXPIRED if kind == "note" else render.SUBTASK_EXPIRED)
             return
         # Do not lose what they typed: it becomes an ordinary task instead.
         await message.answer(render.SUBTASK_EXPIRED)
         outcome = task_service.create_from_text(db, text, sender=user, now=now, tz=config.tz)
         await answer_creation(message, outcome, db, now=now, config=config)
+        return
+
+    if kind == "due":
+        due_at = parse_when(text, now=now, tz=config.tz)
+        if due_at is None:
+            await message.answer(render.DUE_NOT_UNDERSTOOD.format(text=escape(text)))
+            return
+        moved = task_service.set_due(db, task.id, due_at=due_at)
+        if moved is not None:
+            await send_card(message, db, moved, now=now, config=config, lead="📅 Moved\n")
         return
 
     if kind == "note":

@@ -45,6 +45,18 @@ SUBTASK_EXPIRED = (
     "That subtask prompt was more than five minutes old, so I added this as a normal task."
 )
 NOTE_PROMPT = "What should I note on #{task_id}? Send it in your next message."
+DUE_PROMPT = (
+    "🕘 <b>When is #{task_id} due?</b>\n"
+    "Send it in your next message — a date, and a time if you want one:\n"
+    "· <code>tomorrow 14:30</code>  · <code>fri 18:00</code>\n"
+    "· <code>20/09</code>  · <code>24 Sep 09:00</code>  · <code>2026-09-20</code>\n"
+    "· <code>+3d</code>  · <code>+2w</code>  · <code>+1m</code>\n"
+    "A date with no time means 09:00."
+)
+DUE_NOT_UNDERSTOOD = (
+    "I did not find a date in <b>{text}</b>. Nothing changed — "
+    "tap 🕘 Reschedule again and try <code>tomorrow 14:30</code> or <code>20/09</code>."
+)
 NOTE_EXPIRED = "That note prompt was more than five minutes old, so I let it go."
 
 NEW_TASK_PROMPT = (
@@ -115,8 +127,8 @@ def help_text() -> str:
         "A date without a time means 09:00. There are no priorities: "
         "the due date is the urgency.\n\n"
         "Every task card has buttons — <b>Done</b>, <b>+1 day</b>, <b>Waiting</b>, "
-        "<b>Subtask</b>, <b>Note</b>, <b>Reschedule</b> (up to +3 months), <b>Drop</b>, "
-        "and <b>Reopen</b> once it is closed — so you rarely need a command at all.\n\n"
+        "<b>Subtask</b>, <b>Note</b>, <b>Drop</b>, and <b>Reopen</b> once it is closed.\n"
+        "<b>Reschedule</b> offers the usual jumps, or ✏️ type an exact date and time.\n\n"
         "<b>For the two of you</b>\n"
         "· <b>👤 →</b> hands a task over · <b>👥 Both</b> makes a copy for the other one, "
         "since a task has exactly one owner\n"
@@ -213,6 +225,7 @@ def reschedule_keyboard(task: Task) -> InlineKeyboardMarkup:
         _button("+3 months", "when_3m", task.id),
     )
     builder.row(
+        _button("✏️ Type a date", "when_type", task.id),
         _button("✖️ No date", "when_none", task.id),
         _button("← Back", "when_back", task.id),
     )

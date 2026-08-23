@@ -128,6 +128,7 @@ def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, robin: Use
         "Next week",
         "+1 month",
         "+3 months",
+        "✏️ Type a date",
         "✖️ No date",
         "← Back",
     ]

@@ -213,6 +213,9 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - A failed call is remembered in `settings` and shown by `/health` with the reason Google gave, because the first real failure was a 404 that reached only the log while the person watching saw a card that simply never changed.
 - The HTTP body is kept when a call fails: `raise_for_status` throws away the one sentence that says why.
 
+- **✏️ Type a date** sits in the reschedule row because six presets cannot cover "next Tuesday at 14:30", and a card that can only be postponed in fixed jumps sends you back to typing `/due`. It reuses the same one-message prompt as notes and subtasks, and the answer goes through the same `parse_when` as everything else, so there is one date syntax in the whole bot rather than two.
+- Text the prompt cannot read changes nothing and says so, rather than guessing at a date.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

@@ -282,3 +282,46 @@ def test_reopening_a_finished_task_clears_the_done_stamp(
     assert reopened is not None
     assert reopened.status == "todo"
     assert reopened.done_at is None
+
+
+# --- typing an exact date --------------------------------------------------
+
+
+def test_the_reschedule_row_offers_typing_a_date(db: Database, robin: User) -> None:
+    """Presets cover the common cases; "next Tuesday at 14:30" needs typing."""
+    task = _task(db, "call the bank")
+
+    markup = render.reschedule_keyboard(task)
+    labels = [button.text for row in markup.inline_keyboard for button in row]
+    payloads = [button.callback_data for row in markup.inline_keyboard for button in row]
+
+    assert "✏️ Type a date" in labels
+    assert f"t:when_type:{task.id}" in payloads
+
+
+def test_a_typed_date_with_a_time_is_understood(db: Database, robin: User, config: Config) -> None:
+    from bot.parser import parse_when
+    from bot.services.tasks import set_due
+
+    task = _task(db, "call the bank")
+
+    for typed, expected in [
+        ("tomorrow 14:30", datetime(2026, 9, 16, 14, 30, tzinfo=DEFAULT_TZ)),
+        ("20/09 09:30", datetime(2026, 9, 20, 9, 30, tzinfo=DEFAULT_TZ)),
+        ("24 Sep 18:00", datetime(2026, 9, 24, 18, 0, tzinfo=DEFAULT_TZ)),
+        ("fri 08:15", datetime(2026, 9, 18, 8, 15, tzinfo=DEFAULT_TZ)),
+        ("+3d", datetime(2026, 9, 18, 9, 0, tzinfo=DEFAULT_TZ)),
+    ]:
+        due_at = parse_when(typed, now=NOW, tz=DEFAULT_TZ)
+        assert due_at is not None, typed
+        moved = set_due(db, task.id, due_at=due_at)
+        assert moved is not None and moved.due_at is not None
+        assert moved.due_at.astimezone(DEFAULT_TZ) == expected, typed
+        assert moved.remind_at == moved.due_at
+
+
+def test_nonsense_typed_at_the_prompt_changes_nothing(db: Database, robin: User) -> None:
+    from bot.parser import parse_when
+
+    assert parse_when("whenever i get round to it", now=NOW, tz=DEFAULT_TZ) is None
+    assert "did not find a date" in render.DUE_NOT_UNDERSTOOD.format(text="whenever")
