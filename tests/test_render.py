@@ -8,18 +8,18 @@ from bot import render
 from bot.config import Config
 from bot.db import Database
 from bot.handlers.callbacks import _apply
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.render import TaskAction
 from bot.services.tasks import Task, create_task, start_waiting
 from bot.services.users import User, partner_of
-from tests.conftest import ALEX_ID, NOW, SASHA_ID
+from tests.conftest import NOW, ROBIN_ID, SAM_ID
 
 
 def _make(db: Database, **kwargs: object) -> Task:
     defaults: dict[str, object] = {
         "title": "book the movers",
-        "owner_id": ALEX_ID,
-        "created_by": ALEX_ID,
+        "owner_id": ROBIN_ID,
+        "created_by": ROBIN_ID,
         "now": NOW,
     }
     return create_task(db, **{**defaults, **kwargs})  # type: ignore[arg-type]
@@ -52,9 +52,7 @@ def test_callback_data_round_trips() -> None:
 # --- keyboards -------------------------------------------------------------
 
 
-def test_a_todo_card_can_do_everything_without_typing(
-    db: Database, alex: User, sasha: User
-) -> None:
+def test_a_todo_card_can_do_everything_without_typing(db: Database, robin: User, sam: User) -> None:
     task = _make(db)
 
     markup = render.task_keyboard(task, partner=partner_of(db, task.owner_id))
@@ -63,7 +61,7 @@ def test_a_todo_card_can_do_everything_without_typing(
         "✅ Done",
         "📅 +1 day",
         "⏳ Waiting",
-        "👤 → sasha",
+        "👤 → sam",
         "➕ Subtask",
         "👥 Both",
         "📝 Note",
@@ -83,7 +81,7 @@ def test_a_todo_card_can_do_everything_without_typing(
     ]
 
 
-def test_the_give_button_disappears_without_a_partner(db: Database, alex: User) -> None:
+def test_the_give_button_disappears_without_a_partner(db: Database, robin: User) -> None:
     task = _make(db)
 
     markup = render.task_keyboard(task, partner=partner_of(db, task.owner_id))
@@ -92,7 +90,7 @@ def test_the_give_button_disappears_without_a_partner(db: Database, alex: User) 
     assert "➕ Subtask" in _labels(markup)
 
 
-def test_a_waiting_card_carries_its_own_buttons(db: Database, alex: User) -> None:
+def test_a_waiting_card_carries_its_own_buttons(db: Database, robin: User) -> None:
     task = _make(db)
     waiting = start_waiting(db, task.id, now=NOW)
     assert waiting is not None
@@ -103,7 +101,7 @@ def test_a_waiting_card_carries_its_own_buttons(db: Database, alex: User) -> Non
     assert _payloads(markup)[:3] == ["t:done:1", "t:day7:1", "t:todo:1"]
 
 
-def test_a_closed_card_keeps_only_reopen(db: Database, alex: User) -> None:
+def test_a_closed_card_keeps_only_reopen(db: Database, robin: User) -> None:
     """Closing the wrong task with a thumb must be undoable with a thumb."""
     from bot.services.tasks import complete_task, drop_task
 
@@ -118,7 +116,7 @@ def test_a_closed_card_keeps_only_reopen(db: Database, alex: User) -> None:
     assert _payloads(render.task_keyboard(dropped)) == ["t:reopen:2"]
 
 
-def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, alex: User) -> None:
+def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, robin: User) -> None:
     task = _make(db)
 
     markup = render.reschedule_keyboard(task)
@@ -159,7 +157,7 @@ def test_a_prompt_can_be_cancelled() -> None:
     assert _payloads(render.cancel_keyboard()) == ["m:cancel"]
 
 
-def test_a_list_offers_one_button_per_task(db: Database, alex: User) -> None:
+def test_a_list_offers_one_button_per_task(db: Database, robin: User) -> None:
     tasks = [_make(db, title=f"task {index}") for index in range(10)]
 
     markup = render.list_keyboard(tasks, view="today")
@@ -181,74 +179,76 @@ def test_the_home_keyboard_labels_match_the_views() -> None:
 # --- cards -----------------------------------------------------------------
 
 
-def test_a_card_names_owner_date_and_project(db: Database, alex: User) -> None:
-    task = _make(db, project="move", due_at=datetime(2026, 9, 20, 9, 0, tzinfo=PARIS))
+def test_a_card_names_owner_date_and_project(db: Database, robin: User) -> None:
+    task = _make(db, project="move", due_at=datetime(2026, 9, 20, 9, 0, tzinfo=DEFAULT_TZ))
 
-    text = render.task_card(task, alex, now=NOW)
+    text = render.task_card(task, robin, now=NOW)
 
     assert "#1 <b>book the movers</b>" in text
-    assert "👤 alex" in text
+    assert "👤 robin" in text
     assert "📅 Sun 20 Sep 09:00" in text
     assert "🏷 #move" in text
 
 
-def test_a_card_shows_the_follow_up_when_waiting(db: Database, alex: User) -> None:
+def test_a_card_shows_the_follow_up_when_waiting(db: Database, robin: User) -> None:
     task = _make(db)
     waiting = start_waiting(db, task.id, now=NOW)
     assert waiting is not None
 
-    text = render.task_card(waiting, alex, now=NOW)
+    text = render.task_card(waiting, robin, now=NOW)
 
     assert "⏳ waiting" in text
     assert "Tue 22 Sep" in text
 
 
-def test_a_card_points_at_its_parent(db: Database, alex: User) -> None:
+def test_a_card_points_at_its_parent(db: Database, robin: User) -> None:
     parent = _make(db)
     child = _make(db, title="pay the deposit", parent_id=parent.id)
 
-    assert "↳ subtask of #1" in render.task_card(child, alex, now=NOW)
+    assert "↳ subtask of #1" in render.task_card(child, robin, now=NOW)
 
 
-def test_a_card_shows_notes_and_escapes_them(db: Database, alex: User) -> None:
+def test_a_card_shows_notes_and_escapes_them(db: Database, robin: User) -> None:
     from bot.services.tasks import append_note
 
     task = _make(db)
     noted = append_note(db, task.id, text="ask about <b>the deposit</b>", now=NOW)
     assert noted is not None
 
-    text = render.task_card(noted, alex, now=NOW)
+    text = render.task_card(noted, robin, now=NOW)
 
     assert "📝 2026-09-15: ask about &lt;b&gt;the deposit&lt;/b&gt;" in text
 
 
-def test_an_overdue_card_is_marked(db: Database, alex: User) -> None:
+def test_an_overdue_card_is_marked(db: Database, robin: User) -> None:
     task = _make(db, due_at=NOW - timedelta(days=1))
 
-    assert "⚠️" in render.task_card(task, alex, now=NOW)
+    assert "⚠️" in render.task_card(task, robin, now=NOW)
 
 
 # --- lists -----------------------------------------------------------------
 
 
-def test_the_week_list_groups_by_day(db: Database, alex: User, sasha: User) -> None:
+def test_the_week_list_groups_by_day(db: Database, robin: User, sam: User) -> None:
     from bot.services.tasks import list_week
 
-    _make(db, title="movers", due_at=datetime(2026, 9, 16, 9, 0, tzinfo=PARIS))
-    _make(db, title="mairie", owner_id=SASHA_ID, due_at=datetime(2026, 9, 16, 14, 0, tzinfo=PARIS))
-    _make(db, title="bank", due_at=datetime(2026, 9, 18, 9, 0, tzinfo=PARIS))
+    _make(db, title="movers", due_at=datetime(2026, 9, 16, 9, 0, tzinfo=DEFAULT_TZ))
+    _make(
+        db, title="mairie", owner_id=SAM_ID, due_at=datetime(2026, 9, 16, 14, 0, tzinfo=DEFAULT_TZ)
+    )
+    _make(db, title="bank", due_at=datetime(2026, 9, 18, 9, 0, tzinfo=DEFAULT_TZ))
 
     text = render.week_list(
-        list_week(db, now=NOW), {alex.telegram_id: alex, sasha.telegram_id: sasha}, now=NOW
+        list_week(db, now=NOW), {robin.telegram_id: robin, sam.telegram_id: sam}, now=NOW
     )
 
     assert "<b>Wed 16 Sep</b>" in text
     assert "<b>Fri 18 Sep</b>" in text
-    assert "09:00 · alex" in text
-    assert "14:00 · sasha" in text
+    assert "09:00 · robin" in text
+    assert "14:00 · sam" in text
 
 
-def test_empty_lists_say_so(db: Database, alex: User) -> None:
+def test_empty_lists_say_so(db: Database, robin: User) -> None:
     assert render.NOTHING_THIS_WEEK in render.week_list([], {}, now=NOW)
     assert render.NOTHING_OVERDUE in render.overdue_list([], {}, now=NOW)
     assert render.NOTHING_TODAY in render.today_list([], {}, now=NOW)
@@ -266,25 +266,27 @@ def test_the_help_never_advertises_priorities() -> None:
 
 
 def test_every_button_action_does_what_it_says(
-    db: Database, alex: User, sasha: User, config: Config
+    db: Database, robin: User, sam: User, config: Config
 ) -> None:
-    task = _make(db, due_at=datetime(2026, 9, 20, 9, 0, tzinfo=PARIS))
+    task = _make(db, due_at=datetime(2026, 9, 20, 9, 0, tzinfo=DEFAULT_TZ))
     now = NOW
 
     moved, _ = _apply("day1", db, task_id=task.id, now=now, config=config)
     assert moved is not None and moved.due_at is not None
-    assert moved.due_at.astimezone(PARIS) == datetime(2026, 9, 21, 9, 0, tzinfo=PARIS)
+    assert moved.due_at.astimezone(DEFAULT_TZ) == datetime(2026, 9, 21, 9, 0, tzinfo=DEFAULT_TZ)
 
     given, toast = _apply("give", db, task_id=task.id, now=now, config=config)
-    assert given is not None and given.owner_id == SASHA_ID
-    assert "sasha" in toast
+    assert given is not None and given.owner_id == SAM_ID
+    assert "sam" in toast
 
     parked, _ = _apply("wait", db, task_id=task.id, now=now, config=config)
     assert parked is not None and parked.status == "waiting"
 
     extended, _ = _apply("day7", db, task_id=task.id, now=now, config=config)
     assert extended is not None and extended.follow_up_at is not None
-    assert extended.follow_up_at.astimezone(PARIS) == datetime(2026, 9, 29, 10, 30, tzinfo=PARIS)
+    assert extended.follow_up_at.astimezone(DEFAULT_TZ) == datetime(
+        2026, 9, 29, 10, 30, tzinfo=DEFAULT_TZ
+    )
 
     revived, _ = _apply("todo", db, task_id=task.id, now=now, config=config)
     assert revived is not None and revived.status == "todo"
@@ -295,7 +297,7 @@ def test_every_button_action_does_what_it_says(
 
 
 def test_pressing_done_twice_is_reported_not_repeated(
-    db: Database, alex: User, config: Config
+    db: Database, robin: User, config: Config
 ) -> None:
     task = _make(db)
     _apply("done", db, task_id=task.id, now=NOW, config=config)
@@ -307,7 +309,7 @@ def test_pressing_done_twice_is_reported_not_repeated(
 
 
 def test_giving_away_without_a_partner_explains_itself(
-    db: Database, alex: User, config: Config
+    db: Database, robin: User, config: Config
 ) -> None:
     task = _make(db)
 
@@ -317,7 +319,7 @@ def test_giving_away_without_a_partner_explains_itself(
     assert toast == render.NO_PARTNER
 
 
-def test_an_unknown_action_changes_nothing(db: Database, alex: User, config: Config) -> None:
+def test_an_unknown_action_changes_nothing(db: Database, robin: User, config: Config) -> None:
     task = _make(db)
 
     changed, toast = _apply("nonsense", db, task_id=task.id, now=NOW, config=config)

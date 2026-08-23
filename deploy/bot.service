@@ -4,7 +4,7 @@
 
 [Unit]
 Description=task-tracker-tg — shared Telegram task bot
-Documentation=https://github.com/Qotov/task-tracker-tg
+# Documentation: see the README in the checkout
 After=network-online.target
 Wants=network-online.target
 

@@ -17,6 +17,11 @@ DEFAULT_DB_PATH = "tasks.db"
 DEFAULT_TZ = "Europe/Paris"
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
+#: Which country's public holidays to flag on a due date. `off` disables the whole
+#: feature; only `FR` ships a table today.
+DEFAULT_HOLIDAYS = "FR"
+KNOWN_HOLIDAY_REGIONS = frozenset({"FR", "OFF"})
+
 _HINT = (
     "Copy .env.example to .env, fill the values in, and start again "
     "(or export the variables in the environment)."
@@ -38,6 +43,7 @@ class Config:
     anthropic_api_key: str | None
     anthropic_model: str
     backup_chat_id: int | None
+    holidays: str = DEFAULT_HOLIDAYS
 
     @property
     def tz(self) -> ZoneInfo:
@@ -114,6 +120,14 @@ def load_config(
     except (ZoneInfoNotFoundError, ValueError):
         problems.append(f"TZ is {tz_name!r}, which is not a known timezone name.")
 
+    holidays = (source.get("HOLIDAYS", "").strip() or DEFAULT_HOLIDAYS).upper()
+    if holidays not in KNOWN_HOLIDAY_REGIONS:
+        problems.append(
+            f"HOLIDAYS is {holidays!r}; the ones I know are "
+            + ", ".join(sorted(KNOWN_HOLIDAY_REGIONS))
+            + "."
+        )
+
     backup_raw = source.get("BACKUP_CHAT_ID", "").strip()
     backup_chat_id: int | None = None
     if backup_raw:
@@ -137,4 +151,5 @@ def load_config(
         anthropic_api_key=source.get("ANTHROPIC_API_KEY", "").strip() or None,
         anthropic_model=source.get("ANTHROPIC_MODEL", "").strip() or DEFAULT_ANTHROPIC_MODEL,
         backup_chat_id=backup_chat_id,
+        holidays=holidays,
     )

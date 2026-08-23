@@ -12,7 +12,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from bot.db import Database, to_iso
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.tasks import OPEN_STATUSES, Task, is_blocked, row_to_task
 from bot.services.users import User
 
@@ -35,7 +35,7 @@ class Digest:
         return not (self.due_today or self.overdue or self.unblocked or self.follow_ups)
 
 
-def build_digest(db: Database, user: User, *, now: datetime, tz: ZoneInfo = PARIS) -> Digest:
+def build_digest(db: Database, user: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> Digest:
     """Everything this person should know when they wake up."""
     local_today = now.astimezone(tz).date()
     end_of_today = datetime.combine(local_today + timedelta(days=1), time.min, tzinfo=tz)

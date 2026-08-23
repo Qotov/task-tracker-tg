@@ -10,14 +10,14 @@ import pytest
 
 from bot.config import Config
 from bot.db import Database
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.users import User, ensure_user
 
 #: A fixed clock for every test that cares: Tuesday 15 September 2026, 10:30 in Paris.
-NOW = datetime(2026, 9, 15, 10, 30, tzinfo=PARIS)
+NOW = datetime(2026, 9, 15, 10, 30, tzinfo=DEFAULT_TZ)
 
-ALEX_ID = 111_111_111
-SASHA_ID = 222_222_222
+ROBIN_ID = 111_111_111
+SAM_ID = 222_222_222
 
 
 @pytest.fixture
@@ -30,13 +30,13 @@ def db() -> Iterator[Database]:
 
 
 @pytest.fixture
-def alex(db: Database) -> User:
-    return ensure_user(db, telegram_id=ALEX_ID, username="alex", first_name="Alex")
+def robin(db: Database) -> User:
+    return ensure_user(db, telegram_id=ROBIN_ID, username="robin", first_name="Robin")
 
 
 @pytest.fixture
-def sasha(db: Database) -> User:
-    return ensure_user(db, telegram_id=SASHA_ID, username="sasha", first_name="Sasha")
+def sam(db: Database) -> User:
+    return ensure_user(db, telegram_id=SAM_ID, username="sam", first_name="Sam")
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def config(tmp_path: Path) -> Config:
     """A configuration that never talks to Telegram; the token is a fake."""
     return Config(
         bot_token="123456789:AAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        allowed_user_ids=frozenset({ALEX_ID, SASHA_ID}),
+        allowed_user_ids=frozenset({ROBIN_ID, SAM_ID}),
         db_path=tmp_path / "tasks.db",
         tz_name="Europe/Paris",
         anthropic_api_key=None,

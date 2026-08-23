@@ -2,11 +2,11 @@
 
 ## What this project is
 
-A shared Telegram task bot for exactly two people (a married couple) who need to
-track joint tasks during high-pressure periods — moving apartment and French
-administrative paperwork. It is not a product: there are two hardcoded users, one
-private group where both of them and the bot live, plus direct messages for
-personal reminders and digests. Everything happens inside Telegram, so the design
+A shared Telegram task bot for exactly two people who need to track joint tasks
+during a high-pressure period — a move, a stack of official paperwork, anything
+with dates that both of them care about. It is not a product: there are two
+whitelisted users, one private group where both of them and the bot live, plus
+direct messages for personal reminders and digests. Everything happens inside Telegram, so the design
 optimises for low friction (a plain message in the group becomes a task) and low
 maintenance (SQLite file, long polling, no web interface, no hosting beyond one
 small server). The three features that carry the real value are templates that

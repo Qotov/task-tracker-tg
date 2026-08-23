@@ -56,7 +56,7 @@ def test_every_problem_is_reported_at_once() -> None:
 
 def test_non_numeric_user_id_is_rejected() -> None:
     with pytest.raises(ConfigError, match="not a number"):
-        load_config({**VALID, "ALLOWED_USER_IDS": "111,alex"})
+        load_config({**VALID, "ALLOWED_USER_IDS": "111,robin"})
 
 
 def test_unknown_timezone_is_rejected() -> None:

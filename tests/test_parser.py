@@ -1,7 +1,7 @@
 """The parser table — the most important test file in the repo (section 8).
 
-`NOW` is Tuesday 15 September 2026, 10:30 Paris. The sender is `alex`, and the
-registered users are `alex` and `sasha`. Expected due dates are written as Paris
+`NOW` is Tuesday 15 September 2026, 10:30 Paris. The sender is `robin`, and the
+registered users are `robin` and `sam`. Expected due dates are written as Paris
 local time, because that is how a human reads them; storage is UTC.
 """
 
@@ -13,23 +13,23 @@ from datetime import UTC, datetime
 import pytest
 
 from bot.parser import (
+    DEFAULT_TZ,
     NO_TITLE_ERROR,
     ONE_OWNER_ERROR,
-    PARIS,
     ParsedTask,
     parse_task,
     parse_task_ref,
 )
 from tests.conftest import NOW
 
-KNOWN_SHORTS = ("alex", "sasha")
+KNOWN_SHORTS = ("robin", "sam")
 
 
 @dataclass(frozen=True)
 class Case:
     text: str
     title: str
-    owner: str = "alex"
+    owner: str = "robin"
     project: str | None = None
     due: str | None = None  # "YYYY-MM-DD HH:MM" in Paris local time
 
@@ -41,15 +41,15 @@ CASES = [
     Case("buy 1.5 kg of flour", title="buy 1.5 kg of flour"),
     Case("mail the notice to a@b.com", title="mail the notice to a@b.com"),
     # --- owner --------------------------------------------------------------
-    Case("@sasha call the landlord", title="call the landlord", owner="sasha"),
-    Case("@me pick up the keys", title="pick up the keys", owner="alex"),
-    Case("@SASHA shout about the deposit", title="shout about the deposit", owner="sasha"),
+    Case("@sam call the landlord", title="call the landlord", owner="sam"),
+    Case("@me pick up the keys", title="pick up the keys", owner="robin"),
+    Case("@SAM shout about the deposit", title="shout about the deposit", owner="sam"),
     Case("ping @stranger about the lease", title="ping @stranger about the lease"),
     # --- project ------------------------------------------------------------
     Case("#move book the movers", title="book the movers", project="move"),
     Case("book the movers #move", title="book the movers", project="move"),
     Case("#MOVE pack the boxes", title="pack the boxes", project="move"),
-    Case("#mother-visa collect the payslips", title="collect the payslips", project="mother-visa"),
+    Case("#paperwork collect the payslips", title="collect the payslips", project="paperwork"),
     # --- named days ---------------------------------------------------------
     Case("call the mairie today", title="call the mairie", due="2026-09-15 09:00"),
     Case("call the mairie tomorrow", title="call the mairie", due="2026-09-16 09:00"),
@@ -89,16 +89,16 @@ CASES = [
     Case("call mum sat 18:00", title="call mum", due="2026-09-19 18:00"),
     # --- several markers at once -------------------------------------------
     Case(
-        "@sasha #move call the movers tomorrow 10:00",
+        "@sam #move call the movers tomorrow 10:00",
         title="call the movers",
-        owner="sasha",
+        owner="sam",
         project="move",
         due="2026-09-16 10:00",
     ),
     Case(
         "deposit paperwork @me #move fri",
         title="deposit paperwork",
-        owner="alex",
+        owner="robin",
         project="move",
         due="2026-09-18 09:00",
     ),
@@ -120,14 +120,14 @@ def _parse(text: str, **kwargs: object) -> ParsedTask:
     return parse_task(
         text,
         now=NOW,
-        sender_short="alex",
+        sender_short="robin",
         known_shorts=KNOWN_SHORTS,
         **kwargs,  # type: ignore[arg-type]
     )
 
 
 def _local(due: datetime | None) -> str | None:
-    return None if due is None else due.astimezone(PARIS).strftime("%Y-%m-%d %H:%M")
+    return None if due is None else due.astimezone(DEFAULT_TZ).strftime("%Y-%m-%d %H:%M")
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.text.strip() for case in CASES])
@@ -200,21 +200,21 @@ def test_default_project_is_used_when_no_marker_is_present() -> None:
 
 
 def test_explicit_project_beats_the_default() -> None:
-    result = _parse("#mother-visa book an appointment", default_project="move")
+    result = _parse("#paperwork book an appointment", default_project="move")
 
-    assert result.project == "mother-visa"
+    assert result.project == "paperwork"
 
 
 def test_unknown_short_leaves_the_sender_as_owner() -> None:
     result = _parse("@bob water the plants")
 
-    assert result.owner == "alex"
+    assert result.owner == "robin"
     assert result.title == "@bob water the plants"
 
 
 def test_naive_now_is_rejected() -> None:
     with pytest.raises(ValueError, match="aware datetime"):
-        parse_task("buy milk", now=datetime(2026, 9, 15, 10, 30), sender_short="alex")
+        parse_task("buy milk", now=datetime(2026, 9, 15, 10, 30), sender_short="robin")
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from bot import render
 from bot.db import Database
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.recurrence import Recurrence, next_due, parse_recurrence
 from bot.services.tasks import (
     Task,
@@ -17,15 +17,15 @@ from bot.services.tasks import (
     set_recurrence,
 )
 from bot.services.users import User
-from tests.conftest import ALEX_ID, NOW, SASHA_ID
+from tests.conftest import NOW, ROBIN_ID, SAM_ID
 
 
 def _task(db: Database, title: str, **kwargs: object) -> Task:
     return create_task(
         db,
         title=title,
-        owner_id=ALEX_ID,
-        created_by=ALEX_ID,
+        owner_id=ROBIN_ID,
+        created_by=ROBIN_ID,
         now=NOW,
         **kwargs,  # type: ignore[arg-type]
     )
@@ -95,9 +95,9 @@ def test_yearly_lands_on_the_named_date() -> None:
 # --- closing one and getting the next --------------------------------------
 
 
-def test_a_weekly_task_reappears_with_the_right_date(db: Database, alex: User) -> None:
+def test_a_weekly_task_reappears_with_the_right_date(db: Database, robin: User) -> None:
     """Phase 7 is done when this passes."""
-    monday = datetime(2026, 9, 21, 9, 0, tzinfo=PARIS)
+    monday = datetime(2026, 9, 21, 9, 0, tzinfo=DEFAULT_TZ)
     task = _task(db, "take the bins out", due_at=monday)
     set_recurrence(db, task.id, rule=Recurrence("weekly", "mon"))
 
@@ -107,27 +107,27 @@ def test_a_weekly_task_reappears_with_the_right_date(db: Database, alex: User) -
     assert outcome.next_instance is not None
     assert outcome.next_instance.status == "todo"
     assert outcome.next_instance.due_at is not None
-    assert outcome.next_instance.due_at.astimezone(PARIS) == datetime(
-        2026, 9, 28, 9, 0, tzinfo=PARIS
+    assert outcome.next_instance.due_at.astimezone(DEFAULT_TZ) == datetime(
+        2026, 9, 28, 9, 0, tzinfo=DEFAULT_TZ
     )
     assert outcome.next_instance.recurrence == "weekly:mon"
     assert outcome.next_instance.remind_at == outcome.next_instance.due_at
 
 
-def test_the_time_of_day_is_kept(db: Database, alex: User) -> None:
-    evening = datetime(2026, 9, 15, 18, 30, tzinfo=PARIS)
+def test_the_time_of_day_is_kept(db: Database, robin: User) -> None:
+    evening = datetime(2026, 9, 15, 18, 30, tzinfo=DEFAULT_TZ)
     task = _task(db, "water the plants", due_at=evening)
     set_recurrence(db, task.id, rule=Recurrence("daily"))
 
     outcome = complete_task(db, task.id, now=evening)
 
     assert outcome.next_instance is not None and outcome.next_instance.due_at is not None
-    assert outcome.next_instance.due_at.astimezone(PARIS) == datetime(
-        2026, 9, 16, 18, 30, tzinfo=PARIS
+    assert outcome.next_instance.due_at.astimezone(DEFAULT_TZ) == datetime(
+        2026, 9, 16, 18, 30, tzinfo=DEFAULT_TZ
     )
 
 
-def test_a_task_that_does_not_repeat_does_not_come_back(db: Database, alex: User) -> None:
+def test_a_task_that_does_not_repeat_does_not_come_back(db: Database, robin: User) -> None:
     task = _task(db, "book the movers", due_at=NOW)
 
     outcome = complete_task(db, task.id, now=NOW)
@@ -136,17 +136,17 @@ def test_a_task_that_does_not_repeat_does_not_come_back(db: Database, alex: User
     assert len(db.query("SELECT * FROM tasks")) == 1
 
 
-def test_subtasks_are_copied_and_notes_are_not(db: Database, alex: User, sasha: User) -> None:
+def test_subtasks_are_copied_and_notes_are_not(db: Database, robin: User, sam: User) -> None:
     """Section 19, phase 7, exactly: the shape of the job comes, its history does not."""
-    monday = datetime(2026, 9, 21, 9, 0, tzinfo=PARIS)
+    monday = datetime(2026, 9, 21, 9, 0, tzinfo=DEFAULT_TZ)
     parent = _task(db, "weekly shop", due_at=monday)
     set_recurrence(db, parent.id, rule=Recurrence("weekly", "mon"))
     append_note(db, parent.id, text="they were out of milk", now=monday)
     create_task(
         db,
         title="buy the bread",
-        owner_id=SASHA_ID,
-        created_by=ALEX_ID,
+        owner_id=SAM_ID,
+        created_by=ROBIN_ID,
         now=monday,
         parent_id=parent.id,
         due_at=monday,
@@ -158,22 +158,26 @@ def test_subtasks_are_copied_and_notes_are_not(db: Database, alex: User, sasha: 
     assert outcome.next_instance.notes is None
     children = list_subtasks(db, outcome.next_instance.id)
     assert [child.title for child in children] == ["buy the bread"]
-    assert children[0].owner_id == SASHA_ID
+    assert children[0].owner_id == SAM_ID
     assert children[0].due_at is not None
-    assert children[0].due_at.astimezone(PARIS) == datetime(2026, 9, 28, 9, 0, tzinfo=PARIS)
+    assert children[0].due_at.astimezone(DEFAULT_TZ) == datetime(
+        2026, 9, 28, 9, 0, tzinfo=DEFAULT_TZ
+    )
 
 
-def test_an_undated_repeating_task_counts_from_when_it_was_closed(db: Database, alex: User) -> None:
+def test_an_undated_repeating_task_counts_from_when_it_was_closed(
+    db: Database, robin: User
+) -> None:
     task = _task(db, "check the letterbox")
     set_recurrence(db, task.id, rule=Recurrence("daily"))
 
     outcome = complete_task(db, task.id, now=NOW)
 
     assert outcome.next_instance is not None and outcome.next_instance.due_at is not None
-    assert outcome.next_instance.due_at.astimezone(PARIS).date() == date(2026, 9, 16)
+    assert outcome.next_instance.due_at.astimezone(DEFAULT_TZ).date() == date(2026, 9, 16)
 
 
-def test_repeating_can_be_switched_off(db: Database, alex: User) -> None:
+def test_repeating_can_be_switched_off(db: Database, robin: User) -> None:
     task = _task(db, "take the bins out", due_at=NOW)
     set_recurrence(db, task.id, rule=Recurrence("daily"))
 
@@ -183,16 +187,16 @@ def test_repeating_can_be_switched_off(db: Database, alex: User) -> None:
     assert complete_task(db, task.id, now=NOW).next_instance is None
 
 
-def test_a_stored_rule_that_makes_no_sense_is_ignored(db: Database, alex: User) -> None:
+def test_a_stored_rule_that_makes_no_sense_is_ignored(db: Database, robin: User) -> None:
     task = _task(db, "odd one", due_at=NOW)
     db.execute("UPDATE tasks SET recurrence = 'whenever' WHERE id = ?", (task.id,))
 
     assert complete_task(db, task.id, now=NOW).next_instance is None
 
 
-def test_the_card_says_that_it_repeats(db: Database, alex: User) -> None:
+def test_the_card_says_that_it_repeats(db: Database, robin: User) -> None:
     task = _task(db, "take the bins out", due_at=NOW)
     repeating = set_recurrence(db, task.id, rule=Recurrence("weekly", "mon"))
     assert repeating is not None
 
-    assert "🔁 repeats every Monday" in render.task_card(repeating, alex, now=NOW)
+    assert "🔁 repeats every Monday" in render.task_card(repeating, robin, now=NOW)

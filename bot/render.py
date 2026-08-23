@@ -21,10 +21,11 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.digest import Digest
 from bot.services.docs import Attachment
-from bot.services.holidays import french_holiday
+from bot.services.health import Health
+from bot.services.holidays import holiday_name
 from bot.services.recurrence import parse_recurrence
 from bot.services.stats import Board
 from bot.services.tasks import Task
@@ -52,7 +53,7 @@ NEW_TASK_PROMPT = (
     "· <b>@name</b> — whose it is (leave it out and it is yours)\n"
     "· <b>#project</b> — which pile it belongs to\n"
     "· <b>tomorrow</b>, <b>20/09</b>, <b>+3d</b>, <b>fri 18:00</b> — when it is due\n\n"
-    "<i>@sasha call the landlord tomorrow #move</i>"
+    "<i>@name call the landlord tomorrow #move</i>"
 )
 CANCELLED = "Nothing added."
 
@@ -151,6 +152,7 @@ def help_text() -> str:
         "/export — every task as CSV and JSON\n"
         "/settings — digest hour, quiet hours, escalation\n"
         "/dash — rebuild the pinned dashboard\n"
+        "/health — is everything working?\n"
         "/help — this message"
     )
 
@@ -295,9 +297,10 @@ def task_card(
     owner: User,
     *,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     creator: User | None = None,
     blockers: Iterable[Task] = (),
+    holidays: str = "FR",
 ) -> str:
     """The block shown after a task is created or changed.
 
@@ -319,9 +322,9 @@ def task_card(
     if waiting_for:
         listed = ", ".join(f"#{blocker.id} {escape(blocker.title)}" for blocker in waiting_for)
         lines.append(f"🔒 blocked by {listed}")
-    closed_day = _closed_day(task.due_at, tz=tz)
+    closed_day = _closed_day(task.due_at, tz=tz, region=holidays)
     if closed_day is not None:
-        lines.append(f"🇫🇷 {escape(closed_day)} — public holiday, offices will be shut")
+        lines.append(f"📛 {escape(closed_day)} — public holiday, offices will be shut")
     if task.status == "waiting" and task.follow_up_at is not None:
         lines.append(f"⏳ waiting — chase it up {_when(task.follow_up_at, now=now, tz=tz)}")
     if task.recurrence is not None:
@@ -343,25 +346,25 @@ def duplicate_hint(existing: Task) -> str:
     )
 
 
-def _closed_day(due_at: datetime | None, *, tz: ZoneInfo) -> str | None:
-    if due_at is None:
+def _closed_day(due_at: datetime | None, *, tz: ZoneInfo, region: str) -> str | None:
+    if due_at is None or region.upper() == "OFF":
         return None
-    return french_holiday(due_at.astimezone(tz).date())
+    return holiday_name(due_at.astimezone(tz).date(), region=region)
 
 
 def _status_mark(task: Task) -> str:
     return {"done": "✅ ", "dropped": "🗑 ", "waiting": "⏳ "}.get(task.status, "")
 
 
-def created(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def created(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     return "✍️ Added\n" + task_card(task, owner, now=now, tz=tz)
 
 
-def completed(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def completed(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     return "✅ Done\n" + task_card(task, owner, now=now, tz=tz)
 
 
-def repeated(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def repeated(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     return "🔁 Next one\n" + task_card(task, owner, now=now, tz=tz)
 
 
@@ -385,7 +388,7 @@ def today_list(
     owners: Mapping[int, User],
     *,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """Tasks due today or earlier, grouped by owner."""
@@ -410,7 +413,7 @@ def week_list(
     owners: Mapping[int, User],
     *,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """The next seven days, grouped by day."""
@@ -437,7 +440,7 @@ def month_list(
     owners: Mapping[int, User],
     *,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """The next thirty days, grouped by week — a month of single days would not read."""
@@ -478,7 +481,7 @@ def overdue_list(
     owners: Mapping[int, User],
     *,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """Everything past due, oldest first."""
@@ -494,7 +497,7 @@ def open_list(
     *,
     title: str,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """A flat list, used by /mine."""
@@ -553,7 +556,7 @@ def _row(
     return line + (" — " + " · ".join(bits) if bits else "")
 
 
-def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """Posted in the group when the last thing in the way is finished (section 10)."""
     when = "" if task.due_at is None else f"\n📅 {_when(task.due_at, now=now, tz=tz)}"
     return (
@@ -565,19 +568,19 @@ def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -
 # --- what the bot says first -----------------------------------------------
 
 
-def reminder(task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def reminder(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     when = "" if task.due_at is None else f" — {_when(task.due_at, now=now, tz=tz)}"
     return f"⏰ <b>{escape(task.title)}</b>{when}\n#{task.id}"
 
 
-def overdue_ping(task: Task, *, days_late: int, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def overdue_ping(task: Task, *, days_late: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     late = "since this morning" if days_late == 0 else f"{days_late} day(s) late"
     return f"⚠️ <b>{escape(task.title)}</b> is {late}.\n#{task.id}" + (
         "" if task.due_at is None else f" · was due {_when(task.due_at, now=now, tz=tz)}"
     )
 
 
-def follow_up(task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def follow_up(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     del now, tz
     return f"⏳ <b>{escape(task.title)}</b>\n#{task.id} — no answer yet?"
 
@@ -592,7 +595,7 @@ def follow_up_keyboard(task: Task) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def escalation(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def escalation(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     when = "" if task.due_at is None else f" (due {_when(task.due_at, now=now, tz=tz)})"
     return (
         f"📣 <b>{escape(task.title)}</b>{when} has been sitting for three days.\n"
@@ -600,7 +603,7 @@ def escalation(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = PARIS) 
     )
 
 
-def digest(data: Digest, *, now: datetime, tz: ZoneInfo = PARIS) -> str:
+def digest(data: Digest, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """The morning message: four sections, none of them shown when empty."""
     blocks = [f"☀️ <b>Good morning, {escape(data.user.short)} — {now.astimezone(tz):%a %d %b}</b>"]
     for title, tasks in (
@@ -667,6 +670,40 @@ def _setting_button(text: str, field: str, step: int) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         text=text, callback_data=SettingAction(field=field, step=step).pack()
     )
+
+
+def health(report: Health, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
+    """The answer to "is this thing working?", readable from a phone."""
+    lines = ["🩺 <b>Health</b>"]
+
+    age = report.tick_age_seconds
+    if report.ticking and age is not None:
+        lines.append(f"✅ Scheduler alive — last tick {int(age)}s ago")
+    elif age is None:
+        lines.append("❌ Scheduler has never ticked. Is the bot actually running?")
+    else:
+        lines.append(f"❌ Scheduler stalled — last tick {int(age)}s ago")
+
+    if report.queued:
+        when = (
+            ""
+            if report.next_send is None
+            else f", next at {report.next_send.astimezone(tz):%a %H:%M}"
+        )
+        lines.append(f"📬 {report.queued} message(s) held{when}")
+    else:
+        lines.append("📬 Nothing waiting to go out")
+
+    lines.append(f"👥 {len(report.users)} registered · 📦 {report.open_tasks} open task(s)")
+    if report.unreachable:
+        names = ", ".join(escape(user.short) for user in report.unreachable)
+        lines.append(f"⚠️ No private chat with {names} — they must send /start to me directly")
+    lines.append(
+        ("✅ Group linked" if report.group_bound else "⚠️ No group yet")
+        + " · "
+        + ("📌 dashboard pinned" if report.dashboard_pinned else "no dashboard pinned")
+    )
+    return "\n".join(lines)
 
 
 # --- documents -------------------------------------------------------------
@@ -744,7 +781,7 @@ def dashboard(
     *,
     board: Board,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
     """Today per owner, the two counts that matter, and the next three things."""
@@ -786,7 +823,7 @@ _BAR_MARK = "█"
 _BAR_WIDTH = 10
 
 
-def board(data: Board, *, tz: ZoneInfo = PARIS) -> str:
+def board(data: Board, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """The whole picture in one message: progress today, the week, who, what."""
     if data.is_empty:
         return BOARD_EMPTY

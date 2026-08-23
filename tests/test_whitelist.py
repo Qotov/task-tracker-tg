@@ -17,7 +17,7 @@ from bot.config import Config
 from bot.db import Database
 from bot.main import build_dispatcher
 from bot.middleware.whitelist import WhitelistMiddleware, sender_of
-from tests.conftest import ALEX_ID
+from tests.conftest import ROBIN_ID
 
 #: Shaped like a Telegram token so aiogram accepts it; it is not one.
 FAKE_TOKEN = "123456789:AAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -51,7 +51,7 @@ class Recorder:
 
 def test_unknown_sender_is_dropped_and_logged(caplog: pytest.LogCaptureFixture) -> None:
     recorder = Recorder()
-    middleware = WhitelistMiddleware({ALEX_ID})
+    middleware = WhitelistMiddleware({ROBIN_ID})
 
     with caplog.at_level(logging.WARNING):
         result = asyncio.run(middleware(recorder, _update(STRANGER_ID), {}))
@@ -63,9 +63,9 @@ def test_unknown_sender_is_dropped_and_logged(caplog: pytest.LogCaptureFixture) 
 
 def test_allowed_sender_passes_through() -> None:
     recorder = Recorder()
-    middleware = WhitelistMiddleware({ALEX_ID})
+    middleware = WhitelistMiddleware({ROBIN_ID})
 
-    result = asyncio.run(middleware(recorder, _update(ALEX_ID), {}))
+    result = asyncio.run(middleware(recorder, _update(ROBIN_ID), {}))
 
     assert result == "handled"
     assert len(recorder.seen) == 1
@@ -73,7 +73,7 @@ def test_allowed_sender_passes_through() -> None:
 
 def test_update_without_a_sender_is_dropped() -> None:
     recorder = Recorder()
-    middleware = WhitelistMiddleware({ALEX_ID})
+    middleware = WhitelistMiddleware({ROBIN_ID})
 
     result = asyncio.run(middleware(recorder, Update(update_id=7), {}))
 
@@ -92,26 +92,26 @@ def test_unknown_sender_never_reaches_a_handler() -> None:
         seen.append(message.from_user.id)
 
     dispatcher = Dispatcher()
-    dispatcher.update.outer_middleware(WhitelistMiddleware({ALEX_ID}))
+    dispatcher.update.outer_middleware(WhitelistMiddleware({ROBIN_ID}))
     dispatcher.include_router(router)
 
     async def scenario() -> None:
         bot = Bot(token=FAKE_TOKEN)
         try:
             await dispatcher.feed_update(bot, _update(STRANGER_ID, update_id=1))
-            await dispatcher.feed_update(bot, _update(ALEX_ID, update_id=2))
+            await dispatcher.feed_update(bot, _update(ROBIN_ID, update_id=2))
         finally:
             await bot.session.close()
 
     asyncio.run(scenario())
 
-    assert seen == [ALEX_ID]
+    assert seen == [ROBIN_ID]
 
 
 def test_the_real_dispatcher_installs_the_whitelist(db: Database, tmp_path: Path) -> None:
     config = Config(
         bot_token=FAKE_TOKEN,
-        allowed_user_ids=frozenset({ALEX_ID}),
+        allowed_user_ids=frozenset({ROBIN_ID}),
         db_path=tmp_path / "tasks.db",
         tz_name="Europe/Paris",
         anthropic_api_key=None,
@@ -128,7 +128,7 @@ def test_the_real_dispatcher_installs_the_whitelist(db: Database, tmp_path: Path
 
 
 def test_sender_of_reads_a_callback_query() -> None:
-    user = TelegramUser(id=ALEX_ID, is_bot=False, first_name="Alex")
+    user = TelegramUser(id=ROBIN_ID, is_bot=False, first_name="Robin")
     update = Update(
         update_id=3,
         callback_query=CallbackQuery(id="1", from_user=user, chat_instance="x", data="t:done:12"),
@@ -137,14 +137,14 @@ def test_sender_of_reads_a_callback_query() -> None:
     found = sender_of(update)
 
     assert found is not None
-    assert found.id == ALEX_ID
+    assert found.id == ROBIN_ID
 
 
 def test_sender_of_reads_a_bare_event() -> None:
-    found = sender_of(_message(ALEX_ID))
+    found = sender_of(_message(ROBIN_ID))
 
     assert found is not None
-    assert found.id == ALEX_ID
+    assert found.id == ROBIN_ID
 
 
 # --- who ends up in the users table ----------------------------------------
@@ -158,7 +158,7 @@ def test_a_bot_is_never_registered_as_a_user(db: Database) -> None:
 
     registered = register_person(
         TelegramUser(id=BOT_ID, is_bot=True, first_name="tasktrackerbot"),
-        Chat(id=ALEX_ID, type="private"),
+        Chat(id=ROBIN_ID, type="private"),
         db,
     )
 
@@ -173,13 +173,13 @@ def test_pressing_a_button_registers_the_person_not_the_bot(db: Database) -> Non
     card = Message(
         message_id=2,
         date=datetime(2026, 9, 15, 8, 30, tzinfo=UTC),
-        chat=Chat(id=ALEX_ID, type="private"),
+        chat=Chat(id=ROBIN_ID, type="private"),
         from_user=TelegramUser(id=BOT_ID, is_bot=True, first_name="tasktrackerbot"),
         text="#1 book the movers",
     )
     press = CallbackQuery(
         id="1",
-        from_user=TelegramUser(id=ALEX_ID, is_bot=False, first_name="Alex", username="alex"),
+        from_user=TelegramUser(id=ROBIN_ID, is_bot=False, first_name="Robin", username="robin"),
         chat_instance="x",
         message=card,
         data="t:done:1",
@@ -188,5 +188,5 @@ def test_pressing_a_button_registers_the_person_not_the_bot(db: Database) -> Non
     registered = register_presser(press, db)
 
     assert registered is not None
-    assert registered.telegram_id == ALEX_ID
-    assert [row["telegram_id"] for row in db.query("SELECT telegram_id FROM users")] == [ALEX_ID]
+    assert registered.telegram_id == ROBIN_ID
+    assert [row["telegram_id"] for row in db.query("SELECT telegram_id FROM users")] == [ROBIN_ID]

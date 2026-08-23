@@ -18,7 +18,7 @@ from bot.db import Database, from_iso, to_iso
 from bot.parser import (
     DEFAULT_DUE_HOUR,
     DEFAULT_DUE_MINUTE,
-    PARIS,
+    DEFAULT_TZ,
     ParsedTask,
     parse_task,
 )
@@ -153,7 +153,7 @@ def create_from_text(
     *,
     sender: User,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     parent: Task | None = None,
 ) -> CreateOutcome:
     """Parse a free-text message and store the task it describes.
@@ -243,7 +243,7 @@ def _comparable(title: str) -> str:
 
 
 def complete_task(
-    db: Database, task_id: int, *, now: datetime, tz: ZoneInfo = PARIS
+    db: Database, task_id: int, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ
 ) -> CompleteOutcome:
     """Mark a task done, and set the next turn going if it repeats (section 19, phase 7)."""
     task = get_task(db, task_id)
@@ -269,7 +269,9 @@ def set_recurrence(db: Database, task_id: int, *, rule: Recurrence | None) -> Ta
     return get_task(db, task_id)
 
 
-def roll_recurring(db: Database, task: Task, *, now: datetime, tz: ZoneInfo = PARIS) -> Task | None:
+def roll_recurring(
+    db: Database, task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ
+) -> Task | None:
     """Create the next turn of a repeating task: subtasks copied, notes not.
 
     Notes belong to the turn that is finished — "they asked for a payslip" is not
@@ -326,7 +328,7 @@ def set_due(db: Database, task_id: int, *, due_at: datetime | None) -> Task | No
 
 
 def shift_due(
-    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = PARIS
+    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ
 ) -> Task | None:
     """Push a due date out by whole days, keeping the wall-clock time across DST.
 
@@ -346,7 +348,7 @@ def shift_due(
 
 
 def set_due_date(
-    db: Database, task_id: int, *, day: date, now: datetime, tz: ZoneInfo = PARIS
+    db: Database, task_id: int, *, day: date, now: datetime, tz: ZoneInfo = DEFAULT_TZ
 ) -> Task | None:
     """Move a task to a given day, keeping the time of day it already had.
 
@@ -374,7 +376,7 @@ def set_owner(db: Database, task_id: int, *, owner_id: int) -> Task | None:
 
 
 def append_note(
-    db: Database, task_id: int, *, text: str, now: datetime, tz: ZoneInfo = PARIS
+    db: Database, task_id: int, *, text: str, now: datetime, tz: ZoneInfo = DEFAULT_TZ
 ) -> Task | None:
     """Add one dated line to the notes, keeping whatever was there before."""
     task = get_task(db, task_id)
@@ -400,7 +402,7 @@ def start_waiting(
     *,
     now: datetime,
     follow_up_at: datetime | None = None,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
 ) -> Task | None:
     """Park a task as `waiting` on somebody else, with a date to chase it up."""
     if get_task(db, task_id) is None:
@@ -414,7 +416,7 @@ def start_waiting(
 
 
 def shift_follow_up(
-    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = PARIS
+    db: Database, task_id: int, *, days: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ
 ) -> Task | None:
     """Give a waiting task more rope, measured from its current follow-up date."""
     task = get_task(db, task_id)
@@ -540,7 +542,7 @@ def list_subtasks(db: Database, parent_id: int) -> list[Task]:
     return [row_to_task(row) for row in rows]
 
 
-def list_due_today(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+def list_due_today(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> list[Task]:
     """Everything due today or earlier and still open, both users, earliest first."""
     rows = db.query(
         f"""
@@ -567,17 +569,17 @@ def list_open_for(db: Database, owner_id: int) -> list[Task]:
     return [row_to_task(row) for row in rows]
 
 
-def list_week(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+def list_week(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> list[Task]:
     """Open tasks due in the next seven days, counting today. Earlier ones are `/overdue`."""
     return list_ahead(db, days=WEEK_DAYS, now=now, tz=tz)
 
 
-def list_month(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+def list_month(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> list[Task]:
     """The next thirty days — far enough out to see a mairie appointment coming."""
     return list_ahead(db, days=MONTH_DAYS, now=now, tz=tz)
 
 
-def list_ahead(db: Database, *, days: int, now: datetime, tz: ZoneInfo = PARIS) -> list[Task]:
+def list_ahead(db: Database, *, days: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> list[Task]:
     """Open, dated tasks from the start of today to `days` later, earliest first."""
     start = datetime.combine(now.astimezone(tz).date(), time.min, tzinfo=tz)
     end = start + timedelta(days=days)

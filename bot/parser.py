@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-PARIS = ZoneInfo("Europe/Paris")
+DEFAULT_TZ = ZoneInfo("Europe/Paris")
 
 #: A date without a time means 09:00 in the display timezone.
 DEFAULT_DUE_HOUR = 9
@@ -109,7 +109,7 @@ def parse_task(
     known_shorts: Iterable[str] = (),
     default_project: str | None = None,
     default_owner: str | None = None,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
 ) -> ParsedTask:
     """Turn a raw message into a task draft.
 
@@ -162,7 +162,7 @@ def parse_task(
     )
 
 
-def parse_when(text: str, *, now: datetime, tz: ZoneInfo = PARIS) -> datetime | None:
+def parse_when(text: str, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> datetime | None:
     """Read a date expression on its own, for `/due 20/09` and friends.
 
     Same forms as inside a task message; returns the UTC moment, or None when the

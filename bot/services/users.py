@@ -57,7 +57,7 @@ def list_users(db: Database) -> list[User]:
 
 
 def partner_of(db: Database, telegram_id: int) -> User | None:
-    """The other half of the couple, for the "Give to …" button.
+    """The other of the two people, for the "Give to …" button.
 
     There are exactly two users, so "the other one" is unambiguous; it is None
     until the second person has sent their first message.

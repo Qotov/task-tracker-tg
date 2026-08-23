@@ -74,6 +74,7 @@ def card_text(db: Database, task: Task, *, now: datetime, config: Config) -> str
         tz=config.tz,
         creator=get_user(db, task.created_by),
         blockers=task_service.blockers_of(db, task.id),
+        holidays=config.holidays,
     )
 
 

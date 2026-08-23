@@ -14,7 +14,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from bot.db import Database
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.tasks import OPEN_STATUSES, Task, row_to_task
 from bot.services.users import User, list_users
 
@@ -74,7 +74,7 @@ class Board:
         return self.open_total == 0 and self.done_today == 0
 
 
-def build_board(db: Database, *, now: datetime, tz: ZoneInfo = PARIS) -> Board:
+def build_board(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> Board:
     """Count today, the week ahead, and who is carrying what."""
     tasks = [row_to_task(row) for row in db.query("SELECT * FROM tasks")]
     users = list_users(db)

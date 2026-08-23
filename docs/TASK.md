@@ -10,7 +10,7 @@
 
 ## 1. Goal
 
-Two people (a married couple) need to track shared tasks inside Telegram. The bot must be useful during high-pressure periods: moving apartment, and French administrative paperwork.
+Two people need to track shared tasks inside Telegram. The bot must be useful during high-pressure periods: a move, and a stack of official paperwork with real deadlines.
 
 The bot is not a general product. It has exactly two users. Optimise for low friction and low maintenance.
 
@@ -70,8 +70,8 @@ bot/
     whitelist.py       drops updates from unknown users
 templates/
   move.yaml
-  mother-visa.yaml
-  baby-docs.yaml
+  visa.yaml
+  new-arrival.yaml
 tests/
 scripts/backup.sh
 deploy/bot.service
@@ -224,9 +224,9 @@ Write `tests/test_parser.py` as a table of at least 30 input strings with expect
 A template is a YAML file in `templates/`. YAML is a plain text format for structured data.
 
 ```yaml
-name: mother-visa
+name: visa
 description: Invitation and visa paperwork for a family visit
-project: mother-visa
+project: visa
 tasks:
   - key: docs
     title: Collect proof of address and income
@@ -261,9 +261,9 @@ Rules:
 
 Author three real templates:
 
-1. `move.yaml` — apartment move in France: notice to landlord, movers, deposit, address changes at bank, insurance, utilities, internet, post redirection, `état des lieux` inspection, school or crèche notification.
-2. `mother-visa.yaml` — visitor visa and invitation paperwork for a parent coming from abroad to stay 1–2 months.
-3. `baby-docs.yaml` — birth declaration and the French paperwork that follows: `acte de naissance`, `livret de famille`, CAF, social security attachment, mutuelle, crèche waiting list, passport.
+1. `move.yaml` — moving home: notice to the landlord, movers, deposit, address changes at the bank, insurance, utilities, internet, post redirection, the inspection, school or childcare notification.
+2. `visa.yaml` — visitor visa and invitation paperwork for a relative coming from abroad for a month or two.
+3. `new-arrival.yaml` — registering a new family member and the paperwork that follows: the birth certificate, the family record, benefits, health-insurance attachment, childcare waiting list, passport.
 
 Mark any step whose exact rules you are unsure about with `verify: true` in the YAML, and render those tasks with a warning symbol. Do not invent legal deadlines with false confidence.
 
@@ -363,7 +363,7 @@ Done when: the daylight saving test and the 23:00-held-to-07:30 test both pass.
 Done when: closing a blocker posts one unblock message to the group and no duplicate on restart.
 
 **Phase 5 — templates.** `services/templates.py`, `/templates`, `/new` with preview and confirm, and the three real template files.
-Done when: `/new mother-visa 2026-12-01` creates the full tree with correct dates and dependencies.
+Done when: `/new visa 2026-12-01` creates the full tree with correct dates and dependencies.
 
 **Phase 6 — dashboard, documents, export, backups.** Pinned dashboard with debounce, attachment intake, `/docs`, `/export`, `scripts/backup.sh`, systemd unit, full README.
 Done when: a forwarded PDF is attached to a task and `/docs` returns it.

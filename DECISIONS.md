@@ -109,7 +109,7 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 ## Adding from the menu, and a month view (asked for directly)
 
 - **➕ New task** leads the menu, on its own row: adding is the thing this bot exists for, and it should not sit below six ways of looking at what already exists.
-- The button asks once and then hands the answer to the ordinary parser, so `@sasha call the landlord tomorrow #move` works exactly as it does when typed — one flow to learn, not two.
+- The button asks once and then hands the answer to the ordinary parser, so `@name call the landlord tomorrow #move` works exactly as it does when typed — one flow to learn, not two.
 - The prompt lists the markers with an example rather than walking through owner, project and date as separate questions: four taps to add a task is worse than one sentence.
 - The prompt carries a **Cancel** button, because changing your mind should not require sending a message that becomes a task.
 - A late answer to that prompt still becomes a task, with no expiry: typing it in a private chat would have made one anyway, so throwing it away would be the surprising choice.
@@ -178,6 +178,15 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 ## Command names
 
 - `/new` is the guided "add a task" prompt, which collides with section 7's `/new <template> <date>`. Phase 5 is not built; whoever builds it should rename one of the two — `/from <template>` reads better than renaming the button people use daily.
+
+## Making it reusable by anyone (asked for directly)
+
+- Every real name is gone from the code, the tests and the documents: the test people are `robin` and `sam`, the examples say `@name`, and the spec's framing is "two people" rather than a particular household. Git history still holds the earlier wording — scrubbing that needs a history rewrite, which is a separate decision.
+- The `PARIS` constant became `DEFAULT_TZ`. It still defaults to Europe/Paris because `TZ` in `.env` overrides it everywhere, but a project anybody can run should not read as though it is pinned to one city.
+- Public holidays became `HOLIDAYS` in the environment: `FR` ships a table, `off` disables the feature. Adding another country is one table and one branch in `services/holidays.py`.
+- The holiday warning lost its 🇫🇷 flag, since the feature is no longer French by definition.
+- `/health` was added — not in the spec, but the first question after any deploy is "is this thing actually working", and reading a log from a phone is not an answer. The tick writes a heartbeat to `settings` so the report can tell a live scheduler from a stalled one.
+- The document vault's five-most-recent list and the whole design still assume exactly two people; that is the spec's core, not an accident, and it is stated in the README rather than hidden.
 
 ## Testing
 

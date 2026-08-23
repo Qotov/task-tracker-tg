@@ -15,7 +15,7 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from bot.db import Database, from_iso, to_iso
-from bot.parser import PARIS
+from bot.parser import DEFAULT_TZ
 from bot.services.users import User
 
 
@@ -36,7 +36,7 @@ def parse_hhmm(value: str) -> time:
     return time(int(hour), int(minute or 0))
 
 
-def in_quiet_hours(moment: datetime, user: User, *, tz: ZoneInfo = PARIS) -> bool:
+def in_quiet_hours(moment: datetime, user: User, *, tz: ZoneInfo = DEFAULT_TZ) -> bool:
     """Is this instant inside the owner's quiet window? Windows may cross midnight."""
     start = parse_hhmm(user.quiet_start)
     end = parse_hhmm(user.quiet_end)
@@ -48,7 +48,7 @@ def in_quiet_hours(moment: datetime, user: User, *, tz: ZoneInfo = PARIS) -> boo
     return now >= start or now < end
 
 
-def release_at(moment: datetime, user: User, *, tz: ZoneInfo = PARIS) -> datetime:
+def release_at(moment: datetime, user: User, *, tz: ZoneInfo = DEFAULT_TZ) -> datetime:
     """When this message may go out: now, or the end of the quiet window it lands in."""
     if not in_quiet_hours(moment, user, tz=tz):
         return moment
@@ -80,7 +80,7 @@ def deliver_to(
     *,
     text: str,
     now: datetime,
-    tz: ZoneInfo = PARIS,
+    tz: ZoneInfo = DEFAULT_TZ,
     keyboard: str | None = None,
 ) -> int | None:
     """Queue a direct message for one person, held back if they are asleep.
@@ -149,6 +149,6 @@ def remember_said(db: Database, *, task_id: int, kind: str, day: str) -> None:
     )
 
 
-def local_day(moment: datetime, tz: ZoneInfo = PARIS) -> str:
+def local_day(moment: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """The Paris date, which is what `notifications_sent.day` holds."""
     return f"{moment.astimezone(tz):%Y-%m-%d}"

@@ -30,6 +30,17 @@ _MOVEABLE = {
 }
 
 
+def holiday_name(day: date, *, region: str = "FR") -> str | None:
+    """The public holiday on that date for the configured region, or None.
+
+    `off` turns the whole feature off, for anybody whose offices are not French.
+    Adding another country means one more table and one more branch here.
+    """
+    if region.upper() == "FR":
+        return french_holiday(day)
+    return None
+
+
 def french_holiday(day: date) -> str | None:
     """The name of the public holiday on that date, or None on a working day."""
     fixed = _FIXED.get((day.month, day.day))

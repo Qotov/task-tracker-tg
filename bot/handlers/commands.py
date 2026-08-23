@@ -27,6 +27,7 @@ from bot.parser import parse_task_ref, parse_when
 from bot.services import docs as doc_service
 from bot.services import tasks as task_service
 from bot.services.export import export_csv, export_json
+from bot.services.health import check as check_health
 from bot.services.recurrence import parse_recurrence
 from bot.services.settings import DASHBOARD_MESSAGE_ID, bind_group, clear_setting
 from bot.services.users import User, get_by_short
@@ -45,10 +46,10 @@ HOME_BUTTONS = {
     render.HOME_MENU: "menu",
 }
 
-ADD_USAGE = "Tell me what to add, like <code>/add call the mairie tomorrow #mother-visa</code>."
-SUB_USAGE = "Use <code>/sub 12 pay the timbre fiscal</code>."
+ADD_USAGE = "Tell me what to add, like <code>/add call the landlord tomorrow #move</code>."
+SUB_USAGE = "Use <code>/sub 12 pay the deposit</code>."
 DUE_USAGE = "Use <code>/due 12 tomorrow</code> or <code>/due 12 20/09</code>."
-OWN_USAGE = "Use <code>/own 12 @sasha</code>."
+OWN_USAGE = "Use <code>/own 12 @name</code>."
 NOTE_USAGE = "Use <code>/note 12 they asked for a payslip</code>."
 REPEAT_USAGE = (
     "Use <code>/repeat 12 weekly:mon</code> — also <code>daily</code>, "
@@ -235,6 +236,14 @@ async def cmd_repeat(
         return
     lead = "🔁 Repeating\n" if rule is not None else "🔁 No longer repeating\n"
     await send_card(message, db, task, now=datetime.now(UTC), config=config, lead=lead)
+
+
+@router.message(Command("health"))
+async def cmd_health(message: Message, db: Database, config: Config) -> None:
+    """Is the scheduler alive, can I reach both of you, is anything stuck?"""
+    register_sender(message, db)
+    now = datetime.now(UTC)
+    await message.answer(render.health(check_health(db, now=now), tz=config.tz))
 
 
 @router.message(Command("settings"))

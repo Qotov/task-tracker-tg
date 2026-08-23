@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS stopgap: keeps the bot running after you close the terminal, and starts
+  it again at login and after a crash.
+
+  It does NOT run while the Mac is asleep. A laptop that sleeps overnight will
+  not send the morning digest until it wakes; the outbox holds everything, so
+  nothing is lost, it just arrives late. For reminders that arrive on time, run
+  it on a machine that stays awake — see docs/DEPLOY.md.
+
+  Install:
+    cp deploy/com.task-tracker.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.task-tracker.plist
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.task-tracker.plist
+  Logs:
+    tail -f /tmp/task-tracker.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.task-tracker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/sanchous/.local/bin/uv</string>
+    <string>run</string>
+    <string>python</string>
+    <string>-m</string>
+    <string>bot.main</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sanchous/Documents/GitHub/task-tracker-tg</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/task-tracker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/task-tracker.log</string>
+</dict>
+</plist>

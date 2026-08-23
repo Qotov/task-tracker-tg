@@ -24,10 +24,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from bot import render
 from bot.config import Config
-from bot.db import Database
+from bot.db import Database, to_iso
 from bot.services import outbox
 from bot.services.digest import build_digest
-from bot.services.settings import group_chat_id
+from bot.services.settings import LAST_TICK, group_chat_id, set_setting
 from bot.services.tasks import OPEN_STATUSES, Task, is_blocked, row_to_task
 from bot.services.users import User, get_user, list_users
 
@@ -73,6 +73,8 @@ async def tick(bot: Bot, db: Database, config: Config) -> None:
     except Exception:  # pragma: no cover - a bad row must not kill the loop
         logger.exception("planning notifications failed")
     await flush_outbox(bot, db, now=now)
+    # A heartbeat, so /health can say whether this loop is actually running.
+    set_setting(db, LAST_TICK, to_iso(now) or "")
 
 
 def plan_notifications(db: Database, *, now: datetime, tz: ZoneInfo) -> int:

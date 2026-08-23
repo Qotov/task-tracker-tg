@@ -1,6 +1,9 @@
 # task-tracker-tg
 
-A shared Telegram task bot for two people. See [docs/TASK.md](docs/TASK.md) for the
+A shared Telegram task bot for two people — a household, a project, anyone who
+shares a list of dated obligations. Two whitelisted Telegram accounts, one private
+group, one SQLite file, no web interface and nothing to host beyond one small
+process. See [docs/TASK.md](docs/TASK.md) for the
 full specification, [CLAUDE.md](CLAUDE.md) for the working rules, and
 [DECISIONS.md](DECISIONS.md) for every choice the spec left open.
 
@@ -18,7 +21,7 @@ full specification, [CLAUDE.md](CLAUDE.md) for the working rules, and
 4. **Write `.env`.** `cp .env.example .env`, then fill in `BOT_TOKEN` and both
    ids in `ALLOWED_USER_IDS`, comma-separated. `.env` is gitignored and must
    never be committed. Nobody outside that list gets any reply at all.
-5. **Set your Telegram usernames first.** Your handle in the bot (`@alex`) is
+5. **Set your Telegram usernames first.** Your handle in the bot (`@yourname`) is
    taken from your Telegram username the first time you say `/start`, and never
    changes after that.
 6. **`make run`.** The database is created on first start with mode 0600, and
@@ -38,13 +41,13 @@ Run exactly one copy of the bot. Two copies polling the same token gives
 Any plain message becomes a task:
 
 ```
-@sasha call the landlord about the notice tomorrow #move
+@partner call the landlord about the notice tomorrow #move
 ```
 
 `@name` or `@me` sets the single owner, `#project` sets the project, and a date —
 `today`, `tomorrow`, `mon`…`sun`, `20/09`, `20.09`, `24 Sep`, `2026-09-20`,
 `+3d`, `+2w`, `+1m`, any of them with a time like `14:30` — sets when. A date
-without a time means 09:00 Paris. There are no priorities: the due date carries
+without a time means 09:00 in your `TZ`. There are no priorities: the due date carries
 the urgency.
 
 Everything else is buttons. A todo card carries **Done**, **+1 day**,
@@ -73,29 +76,33 @@ typing its number.
 ### For the two of you
 
 **👥 Both** puts a copy of an errand on the other list — a task has exactly one
-owner, so two signatures are two tasks. A card says *asked by alex* when the
-other one wrote it for you. Adding something that already exists gets a quiet
-nudge naming it. A due date landing on a *jour férié* is flagged, because the
-mairie will be shut.
+owner, so two signatures are two tasks. A card says *asked by …* when the other
+one wrote it for you. Adding something that already exists gets a quiet
+nudge naming it. A due date landing on a public holiday is flagged, because the offices will be
+shut — set `HOLIDAYS=off` in `.env` if that is not useful where you are (only
+`FR` ships a table today).
 
 ### Documents
 
 Send a scan or a photo to the bot and it offers the five newest open tasks, plus
 **Search** and **Keep without a task**. Only Telegram's `file_id` is stored —
-nothing is ever written to disk. `/docs mairie` searches titles, projects, file
+nothing is ever written to disk. `/docs lease` searches titles, projects, file
 names and captions and sends the matches back, each captioned with its task.
 
 ### Commands
 
 `/menu` `/new` `/board` `/add` `/sub` `/done` `/drop` `/due` `/own` `/note`
 `/wait` `/block` `/repeat` `/today` `/week` `/month` `/overdue` `/mine` `/docs`
-`/export` `/settings` `/dash` `/help` `/start`
+`/export` `/settings` `/dash` `/health` `/help` `/start`
 
 `/repeat 12 weekly:mon` also takes `daily`, `monthly:15`, `yearly:09-20` and
 `off`. When a repeating task is closed the next one appears with its dates
 shifted; its subtasks come with it, its notes do not.
 
 ## Running it on a server
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, including the
+macOS stopgap and how to move the database.
 
 ```bash
 sudo cp deploy/bot.service /etc/systemd/system/task-tracker-tg.service
@@ -122,5 +129,5 @@ set, and keeps the last seven locally. A nightly cron entry:
 make test
 ```
 
-Runs `ruff check`, then `mypy`, then `pytest` — 267 tests, no network. `make lint`
+Runs `ruff check`, then `mypy`, then `pytest` — 268 tests, no network. `make lint`
 checks formatting and `make fmt` applies it.
