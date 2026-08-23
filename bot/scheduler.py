@@ -53,6 +53,10 @@ def build_scheduler(bot: Bot, db: Database, config: Config) -> AsyncIOScheduler:
         id="tick",
         max_instances=1,
         coalesce=True,
+        # Run once immediately: an interval trigger otherwise waits a whole
+        # minute, which leaves anything the outbox owes from before the restart
+        # sitting there, and makes a freshly started bot look dead to /health.
+        next_run_time=datetime.now(config.tz),
     )
     scheduler.add_job(
         digest_round,

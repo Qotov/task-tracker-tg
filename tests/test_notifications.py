@@ -408,3 +408,13 @@ def test_health_names_anybody_the_bot_cannot_message(db: Database, robin: User) 
 
     assert [user.short for user in report.unreachable] == ["robin"]
     assert "must send /start" in render.health(report)
+
+
+def test_health_names_the_clock_it_works_in(db: Database, robin: User) -> None:
+    """A timezone mismatch is the easiest way to think a reminder is broken."""
+    from bot.services.health import check
+
+    text = render.health(check(db, now=NOW), tz=DEFAULT_TZ)
+
+    assert "10:30" in text  # NOW in the display timezone
+    assert "Europe/Paris" in text

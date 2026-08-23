@@ -674,7 +674,11 @@ def _setting_button(text: str, field: str, step: int) -> InlineKeyboardButton:
 
 def health(report: Health, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """The answer to "is this thing working?", readable from a phone."""
-    lines = ["🩺 <b>Health</b>"]
+    lines = [
+        "🩺 <b>Health</b>",
+        f"🕐 It is <b>{report.at.astimezone(tz):%H:%M}</b> in {escape(str(tz))} — "
+        "the clock I work in. Set <code>TZ</code> in .env if that is not yours.",
+    ]
 
     age = report.tick_age_seconds
     if report.ticking and age is not None:
