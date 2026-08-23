@@ -269,3 +269,21 @@ def test_a_working_call_clears_the_old_failure(db: Database, config: Config) -> 
     )
 
     assert "failed last time" not in render.health(check(db, now=NOW, llm_model="m"))
+
+
+def test_an_enriched_card_keeps_its_heading(db: Database, robin: User, config: Config) -> None:
+    """Re-rendering must not quietly turn "✍️ Added" into a bare card."""
+    from bot.handlers import creation_text
+
+    outcome = create_from_text(db, LONG, sender=robin, now=NOW)
+    assert outcome.task is not None
+
+    before = creation_text(db, outcome, now=NOW, config=config)
+    improved = apply_draft(
+        db, outcome.task, due_at=None, project="admin", subtasks=["a step"], now=NOW
+    )
+    after = creation_text(db, replace(outcome, task=improved), now=NOW, config=config)
+
+    assert before.startswith("✍️ Added")
+    assert after.startswith("✍️ Added")
+    assert "#admin" in after

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 
 from aiogram.enums import ChatType
@@ -190,6 +191,22 @@ def build_view(
     return text, render.list_keyboard(tasks, view=view)
 
 
+def creation_text(db: Database, outcome: CreateOutcome, *, now: datetime, config: Config) -> str:
+    """The full creation message: the lead, the card, and anything the parser complained about.
+
+    Shared with the second-chance parser so an enriched card keeps its heading
+    instead of quietly turning into a bare card.
+    """
+    if outcome.task is None:  # pragma: no cover - callers check first
+        return render.with_warnings(outcome.error or render.BAD_TASK_REF, outcome.warnings)
+    warnings = list(outcome.warnings)
+    if outcome.duplicate is not None:
+        warnings.append(render.duplicate_hint(outcome.duplicate))
+    return render.with_warnings(
+        "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), warnings
+    )
+
+
 async def answer_creation(
     message: Message, outcome: CreateOutcome, db: Database, *, now: datetime, config: Config
 ) -> None:
@@ -199,12 +216,7 @@ async def answer_creation(
             render.with_warnings(outcome.error or render.BAD_TASK_REF, outcome.warnings)
         )
         return
-    warnings = list(outcome.warnings)
-    if outcome.duplicate is not None:
-        warnings.append(render.duplicate_hint(outcome.duplicate))
-    text = render.with_warnings(
-        "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), warnings
-    )
+    text = creation_text(db, outcome, now=now, config=config)
     dashboard.touch()
     sent = await message.answer(text, reply_markup=card_markup(db, outcome.task))
     await second_chance(sent, db, outcome, now=now, config=config)
@@ -244,6 +256,13 @@ async def second_chance(
         now=now,
     )
     dashboard.touch()
-    await refresh_card(card, db, improved, now=now, config=config)
+    try:
+        await card.edit_text(
+            creation_text(db, replace(outcome, task=improved), now=now, config=config),
+            reply_markup=card_markup(db, improved),
+        )
+    except TelegramBadRequest as error:  # pragma: no cover - identical text
+        if "message is not modified" not in str(error):
+            raise
     if draft.subtasks:
         await card.answer(render.added_subtasks(improved, draft.subtasks))
