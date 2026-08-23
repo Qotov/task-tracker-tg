@@ -338,6 +338,13 @@ def task_card(
     return "\n".join(lines)
 
 
+def added_subtasks(task: Task, titles: Iterable[str]) -> str:
+    """Said when the second-chance parser broke a sentence into steps."""
+    steps = list(titles)
+    listed = "\n".join(f"· {escape(title)}" for title in steps)
+    return f"🪄 I read #{task.id} as {len(steps)} steps and added them:\n{listed}"
+
+
 def duplicate_hint(existing: Task) -> str:
     """Said when a new task reads like one that is already on a list."""
     return (

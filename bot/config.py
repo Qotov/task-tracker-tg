@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_DB_PATH = "tasks.db"
 DEFAULT_TZ = "Europe/Paris"
-DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 #: Which country's public holidays to flag on a due date. `off` disables the whole
 #: feature; only `FR` ships a table today.
@@ -40,8 +40,8 @@ class Config:
     allowed_user_ids: frozenset[int]
     db_path: Path
     tz_name: str
-    anthropic_api_key: str | None
-    anthropic_model: str
+    gemini_api_key: str | None
+    gemini_model: str
     backup_chat_id: int | None
     holidays: str = DEFAULT_HOLIDAYS
 
@@ -148,8 +148,8 @@ def load_config(
         allowed_user_ids=frozenset(allowed),
         db_path=db_path,
         tz_name=tz_name,
-        anthropic_api_key=source.get("ANTHROPIC_API_KEY", "").strip() or None,
-        anthropic_model=source.get("ANTHROPIC_MODEL", "").strip() or DEFAULT_ANTHROPIC_MODEL,
+        gemini_api_key=source.get("GEMINI_API_KEY", "").strip() or None,
+        gemini_model=source.get("GEMINI_MODEL", "").strip() or DEFAULT_GEMINI_MODEL,
         backup_chat_id=backup_chat_id,
         holidays=holidays,
     )

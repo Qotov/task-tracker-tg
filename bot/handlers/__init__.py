@@ -13,12 +13,19 @@ from aiogram.types import User as TelegramUser
 from bot import dashboard, render
 from bot.config import Config
 from bot.db import Database
-from bot.services import outbox
+from bot.services import llm, outbox
 from bot.services import tasks as task_service
 from bot.services.settings import group_chat_id
 from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
-from bot.services.users import User, ensure_user, get_user, list_users, partner_of
+from bot.services.users import (
+    User,
+    ensure_user,
+    get_user,
+    known_shorts,
+    list_users,
+    partner_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,4 +198,43 @@ async def answer_creation(
         "✍️ Added\n" + card_text(db, outcome.task, now=now, config=config), warnings
     )
     dashboard.touch()
-    await message.answer(text, reply_markup=card_markup(db, outcome.task))
+    sent = await message.answer(text, reply_markup=card_markup(db, outcome.task))
+    await second_chance(sent, db, outcome, now=now, config=config)
+
+
+async def second_chance(
+    card: Message, db: Database, outcome: CreateOutcome, *, now: datetime, config: Config
+) -> None:
+    """Give a dateless sentence to the model, once the task is already safe.
+
+    The card is on screen before this runs, so a slow or broken model costs the
+    person nothing: the rule-based task simply stays as it is.
+    """
+    task = outcome.task
+    if task is None or not llm.should_ask(
+        outcome.source, has_date=task.due_at is not None, config=config
+    ):
+        return
+
+    draft = await llm.read_task(
+        outcome.source,
+        config=config,
+        now=now,
+        tz=config.tz,
+        shorts=tuple(sorted(known_shorts(db))),
+    )
+    if draft is None or not draft.is_useful:
+        return
+
+    improved = task_service.apply_draft(
+        db,
+        task,
+        due_at=draft.due_at,
+        project=draft.project,
+        subtasks=draft.subtasks,
+        now=now,
+    )
+    dashboard.touch()
+    await refresh_card(card, db, improved, now=now, config=config)
+    if draft.subtasks:
+        await card.answer(render.added_subtasks(improved, draft.subtasks))

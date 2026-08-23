@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bot.config import DEFAULT_ANTHROPIC_MODEL, ConfigError, load_config, load_dotenv
+from bot.config import DEFAULT_GEMINI_MODEL, ConfigError, load_config, load_dotenv
 
 VALID = {"BOT_TOKEN": "123456789:token", "ALLOWED_USER_IDS": "111,222"}
 
@@ -25,8 +25,8 @@ def test_defaults_are_filled_in() -> None:
 
     assert config.db_path == Path("tasks.db")
     assert config.tz_name == "Europe/Paris"
-    assert config.anthropic_model == DEFAULT_ANTHROPIC_MODEL
-    assert config.anthropic_api_key is None
+    assert config.gemini_model == DEFAULT_GEMINI_MODEL
+    assert config.gemini_api_key is None
     assert config.backup_chat_id is None
 
 
@@ -66,11 +66,11 @@ def test_unknown_timezone_is_rejected() -> None:
 
 def test_optional_values_are_read() -> None:
     config = load_config(
-        {**VALID, "ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_MODEL": "x", "BACKUP_CHAT_ID": "-42"}
+        {**VALID, "GEMINI_API_KEY": "sk-test", "GEMINI_MODEL": "x", "BACKUP_CHAT_ID": "-42"}
     )
 
-    assert config.anthropic_api_key == "sk-test"
-    assert config.anthropic_model == "x"
+    assert config.gemini_api_key == "sk-test"
+    assert config.gemini_model == "x"
     assert config.backup_chat_id == -42
 
 

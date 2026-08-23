@@ -74,6 +74,8 @@ class CreateOutcome:
     error: str | None = None
     duplicate: Task | None = None
     """An open task that looks like the same errand — the other one probably wrote it."""
+    source: str = ""
+    """The raw message, kept for the second-chance parser in `services/llm.py`."""
 
 
 @dataclass(frozen=True)
@@ -190,7 +192,7 @@ def create_from_text(
         remind_at=parsed.remind_at,
         parent_id=None if parent is None else parent.id,
     )
-    return CreateOutcome(task=task, warnings=parsed.warnings, duplicate=duplicate)
+    return CreateOutcome(task=task, warnings=parsed.warnings, duplicate=duplicate, source=text)
 
 
 def find_similar(db: Database, title: str, *, threshold: float = SIMILAR_ENOUGH) -> Task | None:
@@ -345,6 +347,38 @@ def shift_due(
     else:
         base = task.due_at.astimezone(tz)
     return set_due(db, task_id, due_at=(base + timedelta(days=days)).astimezone(UTC))
+
+
+def apply_draft(
+    db: Database,
+    task: Task,
+    *,
+    due_at: datetime | None,
+    project: str | None,
+    subtasks: Iterable[str],
+    now: datetime,
+) -> Task:
+    """Fill in what the rule parser could not, without overwriting what it did.
+
+    The title is deliberately left alone: the trigger for asking was a missing
+    date, and there is no way to undo a rewritten title with a button.
+    """
+    if due_at is not None and task.due_at is None:
+        set_due(db, task.id, due_at=due_at)
+    if project is not None and task.project is None:
+        db.execute("UPDATE tasks SET project = ? WHERE id = ?", (project, task.id))
+    refreshed = get_task(db, task.id) or task
+    for title in subtasks:
+        create_task(
+            db,
+            title=title,
+            owner_id=refreshed.owner_id,
+            created_by=refreshed.created_by,
+            now=now,
+            project=refreshed.project,
+            parent_id=refreshed.id,
+        )
+    return get_task(db, task.id) or task
 
 
 def set_due_date(

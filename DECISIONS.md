@@ -188,6 +188,19 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - `/health` was added — not in the spec, but the first question after any deploy is "is this thing actually working", and reading a log from a phone is not an answer. The tick writes a heartbeat to `settings` so the report can tell a live scheduler from a stalled one.
 - The document vault's five-most-recent list and the whole design still assume exactly two people; that is the spec's core, not an accident, and it is stated in the README rather than hidden.
 
+## The second-chance parser (asked for directly: Gemini only)
+
+- `docs/TASK.md` section 8 names the Anthropic API; the request was for Gemini 2.5 Flash Lite only, so `ANTHROPIC_*` became `GEMINI_API_KEY` and `GEMINI_MODEL` and there is no provider abstraction to maintain for a second provider nobody asked for.
+- It is called through a plain HTTPS POST with `aiohttp`, which aiogram already brings, rather than an SDK: the dependency list stays as section 3 fixed it.
+- Gemini's `responseSchema` does the shape enforcement, so there is no markdown fence to strip and a malformed answer is the model's problem, not the parser's.
+- The task is created from the rules and the card is on screen **before** the model is asked, which is a stronger reading of "never let this path block task creation" than a four-second wait would be. The card is then edited in place if the answer was useful.
+- Only a date, a project and subtasks are applied. The title is deliberately left alone: the trigger for asking was a missing date, and there is no button that undoes a rewritten title.
+- Nothing the rule parser decided is overwritten — a date or project it found already wins over the model's.
+- An answer whose date is more than a day in the past is dropped: a model that hands back last year is wrong, not early.
+- The model is asked for an `owner` (section 8 lists it) but the answer is not acted on; silently reassigning somebody's task on a guess is worse than leaving it with whoever wrote it.
+- With no `GEMINI_API_KEY` set nothing is ever sent anywhere, and that is the default. The privacy cost of switching it on — the task text leaves the machine — is stated in the module docstring and the README.
+- The HTTP call sits behind an injectable `transport`, so every test drives it with a fake and no test can reach the network.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

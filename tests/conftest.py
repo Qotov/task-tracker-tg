@@ -47,7 +47,7 @@ def config(tmp_path: Path) -> Config:
         allowed_user_ids=frozenset({ROBIN_ID, SAM_ID}),
         db_path=tmp_path / "tasks.db",
         tz_name="Europe/Paris",
-        anthropic_api_key=None,
-        anthropic_model="claude-haiku-4-5-20251001",
+        gemini_api_key=None,
+        gemini_model="gemini-2.5-flash-lite",
         backup_chat_id=None,
     )

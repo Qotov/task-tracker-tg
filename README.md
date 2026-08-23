@@ -82,6 +82,21 @@ nudge naming it. A due date landing on a public holiday is flagged, because the 
 shut — set `HOLIDAYS=off` in `.env` if that is not useful where you are (only
 `FR` ships a table today).
 
+### The optional second-chance parser
+
+The rule parser handles everything it recognises, offline, and always runs first.
+If you set `GEMINI_API_KEY` in `.env`, a message that it found **no date** in and
+that is longer than eight words gets one more reading by Gemini 2.5 Flash Lite —
+it fills in the date, the project and any obvious subtasks. *we really need to
+sort out the deposit before the inspection at the end of next month* becomes a
+task due 30 September with two steps under it.
+
+The task is saved and the card is on screen before the model is asked, so a slow
+or broken answer costs nothing. It never rewrites your title, never overrides a
+date the rules already found, and is abandoned after four seconds. With no key
+set it never runs and **nothing leaves your machine** — which is the default, and
+worth a conscious decision either way, since the vault holds document numbers.
+
 ### Documents
 
 Send a scan or a photo to the bot and it offers the five newest open tasks, plus
