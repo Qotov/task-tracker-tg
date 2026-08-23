@@ -215,3 +215,15 @@ def test_the_outcome_remembers_the_message_it_came_from(db: Database, robin: Use
     outcome = create_from_text(db, LONG, sender=robin, now=NOW)
 
     assert outcome.source == LONG
+
+
+def test_health_says_whether_the_second_chance_parser_is_on(db: Database) -> None:
+    from bot.services.health import check
+
+    off = render.health(check(db, now=NOW))
+    on = render.health(check(db, now=NOW, llm_model="gemini-2.5-flash-lite"))
+
+    assert "off — no GEMINI_API_KEY" in off
+    assert "nothing leaves this machine" in off
+    assert "on (gemini-2.5-flash-lite)" in on
+    assert "over eight words has no date" in on

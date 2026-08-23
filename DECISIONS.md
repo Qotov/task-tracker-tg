@@ -207,6 +207,8 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - A reminder no longer wears the ⚠️ that means "you are late": the tick runs once a minute, so a reminder is normally a few seconds past its due moment, and scolding somebody for the bot's own scheduling would be absurd.
 - Reminders and overdue pings now carry the task's own keyboard. A ping you cannot act on where it lands makes you go and find the task, which is the thing the ping was supposed to save you.
 
+- `/health` says whether the second-chance parser is on, names the model, and states the trigger in one line — an optional feature nobody can see the state of is one nobody trusts.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

@@ -35,6 +35,7 @@ class Health:
     group_bound: bool
     dashboard_pinned: bool
     open_tasks: int
+    llm_model: str | None
 
     @property
     def tick_age_seconds(self) -> float | None:
@@ -49,7 +50,9 @@ class Health:
         return age is not None and age < 150
 
 
-def check(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> Health:
+def check(
+    db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ, llm_model: str | None = None
+) -> Health:
     del tz  # rendering decides how to show the times
     waiting = outbox.pending(db)
     users = list_users(db)
@@ -63,6 +66,7 @@ def check(db: Database, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> Health:
         group_bound=group_chat_id(db) is not None,
         dashboard_pinned=get_int(db, DASHBOARD_MESSAGE_ID) is not None,
         open_tasks=_open_count(db),
+        llm_model=llm_model,
     )
 
 

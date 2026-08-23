@@ -715,6 +715,13 @@ def health(report: Health, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
     if report.unreachable:
         names = ", ".join(escape(user.short) for user in report.unreachable)
         lines.append(f"⚠️ No private chat with {names} — they must send /start to me directly")
+    if report.llm_model:
+        lines.append(
+            f"🪄 Second-chance parser on ({escape(report.llm_model)}) — used when a message "
+            "over eight words has no date I recognise"
+        )
+    else:
+        lines.append("🪄 Second-chance parser off — no GEMINI_API_KEY, nothing leaves this machine")
     lines.append(
         ("✅ Group linked" if report.group_bound else "⚠️ No group yet")
         + " · "

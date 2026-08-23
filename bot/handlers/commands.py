@@ -243,7 +243,10 @@ async def cmd_health(message: Message, db: Database, config: Config) -> None:
     """Is the scheduler alive, can I reach both of you, is anything stuck?"""
     register_sender(message, db)
     now = datetime.now(UTC)
-    await message.answer(render.health(check_health(db, now=now), tz=config.tz))
+    report = check_health(
+        db, now=now, llm_model=config.gemini_model if config.gemini_api_key else None
+    )
+    await message.answer(render.health(report, tz=config.tz))
 
 
 @router.message(Command("settings"))
