@@ -576,7 +576,13 @@ def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_
 
 
 def reminder(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
-    when = "" if task.due_at is None else f" — {_when(task.due_at, now=now, tz=tz)}"
+    """A reminder says "this is due now" — never the ⚠️ that means "you are late".
+
+    The tick runs once a minute, so a reminder is usually a few seconds past the
+    due moment; scolding somebody for that would be absurd.
+    """
+    del now
+    when = "" if task.due_at is None else f" — {task.due_at.astimezone(tz):%a %d %b %H:%M}"
     return f"⏰ <b>{escape(task.title)}</b>{when}\n#{task.id}"
 
 

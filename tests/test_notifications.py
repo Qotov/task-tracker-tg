@@ -418,3 +418,14 @@ def test_health_names_the_clock_it_works_in(db: Database, robin: User) -> None:
 
     assert "10:30" in text  # NOW in the display timezone
     assert "Europe/Paris" in text
+
+
+def test_a_reminder_does_not_scold_you_for_the_ticks_own_delay(db: Database, robin: User) -> None:
+    """The tick runs once a minute, so a reminder always arrives just after due."""
+    task = _task(db, "test ping", due_at=NOW)
+
+    text = render.reminder(task, now=NOW + timedelta(seconds=24), tz=DEFAULT_TZ)
+
+    assert "⏰" in text
+    assert "⚠️" not in text
+    assert "10:30" in text
