@@ -29,7 +29,7 @@ from bot.services import outbox
 from bot.services.digest import build_digest
 from bot.services.settings import LAST_TICK, group_chat_id, set_setting
 from bot.services.tasks import OPEN_STATUSES, Task, is_blocked, row_to_task
-from bot.services.users import User, get_user, list_users
+from bot.services.users import User, get_user, list_users, partner_of
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,7 @@ def _plan_reminder(db: Database, task: Task, owner: User, *, now: datetime, tz: 
         text=render.reminder(task, now=now, tz=tz),
         now=now,
         tz=tz,
+        keyboard=_card_keyboard(db, task),
         # Keyed on the reminder itself, not on today: otherwise a task nobody
         # closes would ping every morning for the rest of its life. Moving the
         # date sets a new key, so a rescheduled task reminds again.
@@ -143,6 +144,7 @@ def _plan_overdue(db: Database, task: Task, owner: User, *, now: datetime, tz: Z
         text=render.overdue_ping(task, days_late=days_late, now=now, tz=tz),
         now=now,
         tz=tz,
+        keyboard=_card_keyboard(db, task),
     )
 
 
@@ -213,6 +215,11 @@ def _queue_dm(
         return 0
     outbox.remember_said(db, task_id=task.id, kind=kind, day=day)
     return 1
+
+
+def _card_keyboard(db: Database, task: Task) -> InlineKeyboardMarkup | None:
+    """A ping you cannot act on makes you go and find the task. Give it the buttons."""
+    return render.task_keyboard(task, partner=partner_of(db, task.owner_id))
 
 
 async def flush_outbox(bot: Bot, db: Database, *, now: datetime) -> int:

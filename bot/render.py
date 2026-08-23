@@ -583,19 +583,19 @@ def reminder(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     """
     del now
     when = "" if task.due_at is None else f" — {task.due_at.astimezone(tz):%a %d %b %H:%M}"
-    return f"⏰ <b>{escape(task.title)}</b>{when}\n#{task.id}"
+    return f"🔔 <b>Reminder</b>\n{escape(task.title)}{when} · #{task.id}"
 
 
 def overdue_ping(task: Task, *, days_late: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
-    late = "since this morning" if days_late == 0 else f"{days_late} day(s) late"
-    return f"⚠️ <b>{escape(task.title)}</b> is {late}.\n#{task.id}" + (
-        "" if task.due_at is None else f" · was due {_when(task.due_at, now=now, tz=tz)}"
-    )
+    del now
+    late = "a day late" if days_late == 1 else f"{days_late} days late"
+    when = "" if task.due_at is None else f", due {task.due_at.astimezone(tz):%a %d %b %H:%M}"
+    return f"⚠️ <b>Still open</b>\n{escape(task.title)} — {late}{when} · #{task.id}"
 
 
 def follow_up(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     del now, tz
-    return f"⏳ <b>{escape(task.title)}</b>\n#{task.id} — no answer yet?"
+    return f"⏳ <b>Still waiting</b>\n{escape(task.title)} · #{task.id} — no answer yet?"
 
 
 def follow_up_keyboard(task: Task) -> InlineKeyboardMarkup:

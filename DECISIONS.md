@@ -201,6 +201,12 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - With no `GEMINI_API_KEY` set nothing is ever sent anywhere, and that is the default. The privacy cost of switching it on — the task text leaves the machine — is stated in the module docstring and the README.
 - The HTTP call sits behind an injectable `transport`, so every test drives it with a fake and no test can reach the network.
 
+## Telling a notification apart from an answer
+
+- The bot's unprompted messages open with what they are — 🔔 Reminder, ⚠️ Still open, ⏳ Still waiting — because a reminder that arrives while you are pressing buttons is otherwise indistinguishable from the reply to whatever you just pressed. That is exactly how the first live reminder went unnoticed.
+- A reminder no longer wears the ⚠️ that means "you are late": the tick runs once a minute, so a reminder is normally a few seconds past its due moment, and scolding somebody for the bot's own scheduling would be absurd.
+- Reminders and overdue pings now carry the task's own keyboard. A ping you cannot act on where it lands makes you go and find the task, which is the thing the ping was supposed to save you.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

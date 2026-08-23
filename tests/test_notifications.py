@@ -426,6 +426,30 @@ def test_a_reminder_does_not_scold_you_for_the_ticks_own_delay(db: Database, rob
 
     text = render.reminder(task, now=NOW + timedelta(seconds=24), tz=DEFAULT_TZ)
 
-    assert "⏰" in text
+    assert "🔔 <b>Reminder</b>" in text  # obviously the bot speaking first
     assert "⚠️" not in text
     assert "10:30" in text
+
+
+def test_a_ping_can_be_acted_on_where_it_lands(db: Database) -> None:
+    """A reminder you cannot close makes you go and find the task."""
+    _with_dm(db)
+    _task(db, "test ping", remind_at=NOW)
+
+    plan_notifications(db, now=NOW, tz=DEFAULT_TZ)
+
+    queued = outbox.pending(db)[0]
+    assert queued.keyboard is not None
+    assert "t:done:1" in queued.keyboard
+    assert "🔔 <b>Reminder</b>" in queued.text
+
+
+def test_an_overdue_ping_says_how_late_and_carries_buttons(db: Database) -> None:
+    _with_dm(db)
+    _task(db, "the deposit", due_at=NOW - timedelta(days=2))
+
+    plan_notifications(db, now=NOW, tz=DEFAULT_TZ)
+
+    queued = [message for message in outbox.pending(db) if "Still open" in message.text][0]
+    assert "2 days late" in queued.text
+    assert queued.keyboard is not None and "t:done:" in queued.keyboard
