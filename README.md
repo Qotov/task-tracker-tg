@@ -73,6 +73,11 @@ typing its number.
 - **Keeps a pinned dashboard** in the group, edited in place at most once every
   five seconds.
 
+`/stats` is the fortnight behind you: what you closed against what you added, a
+streak, how much of it made its date, the split between the two of you — and a
+sentence saying what each number means. It reads from an append-only event log,
+so reopening a task cannot rewrite last week.
+
 ### For the two of you
 
 **👥 Both** puts a copy of an errand on the other list — a task has exactly one
@@ -108,7 +113,7 @@ names and captions and sends the matches back, each captioned with its task.
 
 `/menu` `/new` `/board` `/add` `/sub` `/done` `/drop` `/due` `/own` `/note`
 `/wait` `/block` `/repeat` `/today` `/week` `/month` `/overdue` `/mine` `/docs`
-`/export` `/settings` `/dash` `/health` `/help` `/start`
+`/export` `/settings` `/dash` `/health` `/stats` `/help` `/start`
 
 `/repeat 12 weekly:mon` also takes `daily`, `monthly:15`, `yearly:09-20` and
 `off`. When a repeating task is closed the next one appears with its dates
@@ -144,5 +149,7 @@ set, and keeps the last seven locally. A nightly cron entry:
 make test
 ```
 
-Runs `ruff check`, then `mypy`, then `pytest` — 268 tests, no network. `make lint`
+Runs `ruff check`, then `mypy`, then `pytest` — 312 tests, no network.
+[docs/AUDIT.md](docs/AUDIT.md) records what a product audit found, what was fixed,
+and what is still weak. `make lint`
 checks formatting and `make fmt` applies it.

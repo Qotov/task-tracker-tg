@@ -26,6 +26,7 @@ from bot.services.digest import Digest
 from bot.services.docs import Attachment
 from bot.services.health import Health
 from bot.services.holidays import holiday_name
+from bot.services.insights import Insights
 from bot.services.recurrence import parse_recurrence
 from bot.services.stats import Board
 from bot.services.tasks import Task
@@ -145,6 +146,7 @@ def help_text() -> str:
         "/menu — the button menu\n"
         "/new — add a task, guided\n"
         "/board — the tracker board\n"
+        "/stats — progress, trends and what they mean\n"
         "/add &lt;text&gt; — add a task\n"
         "/sub &lt;id&gt; &lt;text&gt; — add a subtask under it\n"
         "/done &lt;id&gt; — close a task\n"
@@ -242,7 +244,8 @@ def menu_keyboard() -> InlineKeyboardMarkup:
         _view_button("📆 Month", "month"),
     )
     builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("📋 Mine", "mine"))
-    builder.row(_view_button("📊 Board", "board"), _view_button("❓ Help", "help"))
+    builder.row(_view_button("📊 Board", "board"), _view_button("📈 Progress", "stats"))
+    builder.row(_view_button("❓ Help", "help"))
     return builder.as_markup()
 
 
@@ -265,7 +268,7 @@ def list_keyboard(tasks: Iterable[Task], *, view: str) -> InlineKeyboardMarkup:
 
 def board_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(_view_button("🔄 Refresh", "board"), _view_button("📅 Today", "today"))
+    builder.row(_view_button("🔄 Refresh", "board"), _view_button("📈 Progress", "stats"))
     builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("☰ Menu", "menu"))
     return builder.as_markup()
 
@@ -853,6 +856,83 @@ def dashboard(
     if len(text) > DASHBOARD_LIMIT:
         text = text[: DASHBOARD_LIMIT - 1].rstrip() + "…"
     return text
+
+
+# --- statistics that answer a question -------------------------------------
+
+STATS_EMPTY = (
+    "📈 <b>Progress</b>\n\nNothing has happened yet. Close a few tasks and come back —\n"
+    "this becomes a fortnight of history, a streak, and what it means."
+)
+
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(counts: Iterable[int]) -> str:
+    """A fortnight of days in fourteen characters."""
+    values = list(counts)
+    if not values:
+        return ""
+    peak = max(values)
+    if peak == 0:
+        return _SPARK[0] * len(values)
+    return "".join(
+        _SPARK[min(len(_SPARK) - 1, round(value / peak * (len(_SPARK) - 1)))] for value in values
+    )
+
+
+def stats(report: Insights, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
+    """The fortnight, what it means, and where it is going wrong."""
+    if report.is_empty:
+        return STATS_EMPTY
+
+    local = report.at.astimezone(tz)
+    blocks = [f"📈 <b>Progress — last {report.days} days</b>"]
+
+    trend = [
+        f"✅ closed   {sparkline(report.done)} {report.done_total}",
+        f"➕ added    {sparkline(report.added)} {report.added_total}",
+    ]
+    blocks.append("<pre>" + "\n".join(trend) + "</pre>")
+
+    headline = [f"📦 {report.open_now} open"]
+    if report.overdue_now:
+        headline.append(f"⚠️ {report.overdue_now} overdue")
+    if report.streak:
+        headline.append(f"🔥 {report.streak}-day streak")
+    share = report.punctuality
+    if share is not None:
+        headline.append(f"🎯 {round(share * 100)}% on time")
+    blocks.append(" · ".join(headline))
+
+    if len(report.people) > 1:
+        rows = [
+            f"{person.user.short[:10]:<11}✅ {person.done:<4} ➕ {person.added}"
+            for person in report.people
+        ]
+        blocks.append("<b>Between you</b>\n<pre>" + escape("\n".join(rows)) + "</pre>")
+
+    if report.messages:
+        blocks.append(
+            "<b>What that means</b>\n" + "\n".join(f"· {line}" for line in report.messages)
+        )
+
+    if report.neglected:
+        dusty = "\n".join(
+            f"• #{task.id} {escape(task.title)} — {(report.at - task.created_at).days} days old"
+            for task in report.neglected[:3]
+        )
+        blocks.append("<b>Gathering dust</b>\n" + dusty)
+
+    blocks.append(f"<i>as of {local:%a %d %b %H:%M}</i>")
+    return "\n\n".join(blocks)
+
+
+def stats_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(_view_button("🔄 Refresh", "stats"), _view_button("📊 Board", "board"))
+    builder.row(_view_button("☰ Menu", "menu"))
+    return builder.as_markup()
 
 
 # --- the board -------------------------------------------------------------

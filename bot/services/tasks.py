@@ -22,6 +22,7 @@ from bot.parser import (
     ParsedTask,
     parse_task,
 )
+from bot.services import events
 from bot.services.recurrence import Recurrence, next_due, parse_recurrence
 from bot.services.users import User, get_by_short, known_shorts
 
@@ -146,6 +147,7 @@ def create_task(
     created = get_task(db, task_id)
     if created is None:  # pragma: no cover - the insert above just succeeded
         raise RuntimeError(f"task {task_id} vanished right after being created")
+    events.record(db, task_id=task_id, kind=events.CREATED, at=now, actor_id=created_by)
     return created
 
 
@@ -251,9 +253,15 @@ def complete_task(
     task = get_task(db, task_id)
     if task is None:
         return CompleteOutcome(task=None)
-    if task.status == "done":
-        return CompleteOutcome(task=task, already_done=True)
-    db.execute("UPDATE tasks SET status = 'done', done_at = ? WHERE id = ?", (to_iso(now), task_id))
+    # One conditional write, so a double tap — or a second process — cannot both
+    # believe they closed it and roll two copies of a recurring task.
+    cursor = db.execute(
+        "UPDATE tasks SET status = 'done', done_at = ? WHERE id = ? AND status != 'done'",
+        (to_iso(now), task_id),
+    )
+    if cursor.rowcount != 1:
+        return CompleteOutcome(task=get_task(db, task_id), already_done=True)
+    events.record(db, task_id=task_id, kind=events.DONE, at=now, actor_id=task.owner_id)
     return CompleteOutcome(
         task=get_task(db, task_id),
         next_instance=roll_recurring(db, task, now=now, tz=tz),
@@ -326,6 +334,7 @@ def set_due(db: Database, task_id: int, *, due_at: datetime | None) -> Task | No
         return None
     stored = to_iso(due_at)
     db.execute("UPDATE tasks SET due_at = ?, remind_at = ? WHERE id = ?", (stored, stored, task_id))
+    events.record(db, task_id=task_id, kind=events.RESCHEDULED, at=due_at or _clock_now())
     return get_task(db, task_id)
 
 
@@ -427,6 +436,7 @@ def drop_task(db: Database, task_id: int) -> Task | None:
     if get_task(db, task_id) is None:
         return None
     db.execute("UPDATE tasks SET status = 'dropped' WHERE id = ?", (task_id,))
+    events.record(db, task_id=task_id, kind=events.DROPPED, at=_clock_now())
     return get_task(db, task_id)
 
 
@@ -446,6 +456,7 @@ def start_waiting(
         "UPDATE tasks SET status = 'waiting', follow_up_at = ? WHERE id = ?",
         (to_iso(when), task_id),
     )
+    events.record(db, task_id=task_id, kind=events.WAITING, at=now)
     return get_task(db, task_id)
 
 
@@ -470,6 +481,7 @@ def back_to_todo(db: Database, task_id: int) -> Task | None:
         "UPDATE tasks SET status = 'todo', follow_up_at = NULL, done_at = NULL WHERE id = ?",
         (task_id,),
     )
+    events.record(db, task_id=task_id, kind=events.REOPENED, at=_clock_now())
     return get_task(db, task_id)
 
 
@@ -661,6 +673,11 @@ def _resolve_owner(db: Database, parsed: ParsedTask, sender: User) -> int:
         return sender.telegram_id
     owner = get_by_short(db, parsed.owner)
     return sender.telegram_id if owner is None else owner.telegram_id
+
+
+def _clock_now() -> datetime:
+    """These few writes take no `now`; history still needs one."""
+    return datetime.now(UTC)
 
 
 def _short_of(db: Database, user_id: int) -> str | None:

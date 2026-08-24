@@ -10,6 +10,7 @@ from bot.db import Database
 from bot.handlers import build_view
 from bot.handlers.callbacks import _apply
 from bot.parser import DEFAULT_TZ
+from bot.services import tasks as task_service
 from bot.services.stats import build_board
 from bot.services.tasks import Task, complete_task, create_task, start_waiting
 from bot.services.users import User
@@ -325,3 +326,137 @@ def test_nonsense_typed_at_the_prompt_changes_nothing(db: Database, robin: User)
 
     assert parse_when("whenever i get round to it", now=NOW, tz=DEFAULT_TZ) is None
     assert "did not find a date" in render.DUE_NOT_UNDERSTOOD.format(text="whenever")
+
+
+# --- progress, trends and what they mean -----------------------------------
+
+
+def test_history_survives_a_task_being_reopened(db: Database, robin: User) -> None:
+    """done_at is wiped on reopen; the event log is why last week stays true."""
+    from bot.services.events import DONE, per_day
+    from bot.services.tasks import back_to_todo, complete_task
+
+    task = _task(db, "pay the deposit")
+    complete_task(db, task.id, now=NOW)
+    back_to_todo(db, task.id)
+
+    assert task_service.get_task(db, task.id).done_at is None  # type: ignore[union-attr]
+    assert sum(per_day(db, kind=DONE, days=7, now=NOW).values()) == 1  # history remembers
+
+
+def test_the_streak_counts_consecutive_days(db: Database, robin: User) -> None:
+    from bot.services import events
+
+    for offset in (0, 1, 2, 4):  # a gap on day 3
+        task = _task(db, f"task {offset}")
+        events.record(db, task_id=task.id, kind=events.DONE, at=NOW - timedelta(days=offset))
+
+    assert events.streak(db, now=NOW) == 3
+
+
+def test_today_being_quiet_does_not_break_a_streak(db: Database, robin: User) -> None:
+    """A streak that resets at 00:01 punishes you for not having worked yet."""
+    from bot.services import events
+
+    for offset in (1, 2):
+        task = _task(db, f"task {offset}")
+        events.record(db, task_id=task.id, kind=events.DONE, at=NOW - timedelta(days=offset))
+
+    assert events.streak(db, now=NOW) == 2
+
+
+def test_the_report_says_whether_the_list_is_growing(db: Database, robin: User) -> None:
+    from bot.services import events
+    from bot.services.insights import build_insights
+
+    for index in range(5):
+        _task(db, f"added {index}")  # five created today
+    done = _task(db, "closed one")
+    events.record(db, task_id=done.id, kind=events.DONE, at=NOW)
+
+    report = build_insights(db, now=NOW)
+
+    assert report.added_total == 6
+    assert report.done_total == 1
+    assert report.keeping_up == -5
+    assert any("list is growing" in line for line in report.messages)
+
+
+def test_punctuality_counts_only_dated_tasks(db: Database, robin: User) -> None:
+    from bot.services import events
+    from bot.services.insights import build_insights
+
+    early = _task(db, "on time", due_at=NOW + timedelta(days=1))
+    late = _task(db, "late", due_at=NOW - timedelta(days=1))
+    undated = _task(db, "no date")
+    for task in (early, late, undated):
+        events.record(db, task_id=task.id, kind=events.DONE, at=NOW)
+
+    report = build_insights(db, now=NOW)
+
+    assert (report.on_time, report.late) == (1, 1)  # the undated one is not judged
+    assert report.punctuality == 0.5
+
+
+def test_old_undated_tasks_are_called_out(db: Database, robin: User) -> None:
+    from bot.services.insights import build_insights
+    from bot.services.tasks import create_task
+
+    create_task(
+        db,
+        title="someday maybe",
+        owner_id=ROBIN_ID,
+        created_by=ROBIN_ID,
+        now=NOW - timedelta(days=40),
+    )
+
+    report = build_insights(db, now=NOW)
+
+    assert [task.title for task in report.neglected] == ["someday maybe"]
+    assert any("undated for weeks" in line for line in report.messages)
+
+
+def test_a_pattern_needs_enough_data_to_mean_anything(db: Database, robin: User) -> None:
+    """Two completions is not a habit; the bot must not narrate noise."""
+    from bot.services import events
+    from bot.services.insights import build_insights
+
+    for offset in (0, 1):
+        task = _task(db, f"task {offset}")
+        events.record(db, task_id=task.id, kind=events.DONE, at=NOW - timedelta(days=offset))
+
+    report = build_insights(db, now=NOW)
+
+    assert report.best_weekday is None
+    assert not any("finished on" in line for line in report.messages)
+
+
+def test_the_progress_view_renders_and_stays_short(
+    db: Database, robin: User, config: Config
+) -> None:
+    from bot.services import events
+
+    for offset in range(10):
+        task = _task(db, f"task {offset}", due_at=NOW - timedelta(days=offset))
+        events.record(db, task_id=task.id, kind=events.DONE, at=NOW - timedelta(days=offset))
+
+    text, markup = build_view("stats", db, user=robin, now=NOW, config=config)
+
+    assert "📈 <b>Progress" in text
+    assert "closed" in text and "added" in text
+    assert "What that means" in text
+    assert len(text) < 4000  # Telegram's message ceiling
+    assert markup.inline_keyboard
+
+
+def test_an_empty_history_says_so(db: Database, robin: User, config: Config) -> None:
+    text, _ = build_view("stats", db, user=robin, now=NOW, config=config)
+
+    assert text == render.STATS_EMPTY
+
+
+def test_the_sparkline_is_one_character_per_day() -> None:
+    assert len(render.sparkline([0, 1, 2, 3])) == 4
+    assert render.sparkline([]) == ""
+    assert render.sparkline([0, 0, 0]) == "▁▁▁"
+    assert render.sparkline([0, 4])[-1] == "█"

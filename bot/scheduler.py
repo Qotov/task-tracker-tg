@@ -173,7 +173,7 @@ def _plan_escalation(db: Database, task: Task, owner: User, *, now: datetime, tz
     if chat_id is None:
         return 0
     day = f"{task.due_at.astimezone(tz):%Y-%m-%d}"  # once per task, keyed on its due date
-    if outbox.already_said(db, task_id=task.id, kind="escalation", day=day):
+    if not outbox.claim_saying(db, task_id=task.id, kind="escalation", day=day):
         return 0
     outbox.queue(
         db,
@@ -181,7 +181,6 @@ def _plan_escalation(db: Database, task: Task, owner: User, *, now: datetime, tz
         text=render.escalation(task, owner, now=now, tz=tz),
         send_after=outbox.release_at(now, owner, tz=tz),
     )
-    outbox.remember_said(db, task_id=task.id, kind="escalation", day=day)
     return 1
 
 
@@ -198,7 +197,7 @@ def _queue_dm(
     day: str | None = None,
 ) -> int:
     day = day or outbox.local_day(now, tz)
-    if outbox.already_said(db, task_id=task.id, kind=kind, day=day):
+    if not outbox.claim_saying(db, task_id=task.id, kind=kind, day=day):
         return 0
     queued = outbox.deliver_to(
         db,
@@ -212,8 +211,12 @@ def _queue_dm(
         logger.warning(
             "no private chat with %s yet, dropping %s for #%s", owner.short, kind, task.id
         )
+        # Give the claim back: they may open a private chat before the next tick.
+        db.execute(
+            "DELETE FROM notifications_sent WHERE task_id = ? AND kind = ? AND day = ?",
+            (task.id, kind, day),
+        )
         return 0
-    outbox.remember_said(db, task_id=task.id, kind=kind, day=day)
     return 1
 
 
@@ -229,12 +232,14 @@ async def flush_outbox(bot: Bot, db: Database, *, now: datetime) -> int:
         markup = (
             InlineKeyboardMarkup.model_validate_json(message.keyboard) if message.keyboard else None
         )
+        if not outbox.claim(db, message.id, now=now):
+            continue  # another flush got there first
         try:
             await bot.send_message(message.chat_id, message.text, reply_markup=markup)
         except TelegramAPIError:
             logger.exception("could not deliver outbox message %s", message.id)
+            outbox.release(db, message.id)
             continue
-        outbox.mark_sent(db, message.id, now=now)
         sent += 1
     return sent
 

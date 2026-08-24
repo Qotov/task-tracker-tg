@@ -16,6 +16,7 @@ from bot.config import Config
 from bot.db import Database
 from bot.services import llm, outbox
 from bot.services import tasks as task_service
+from bot.services.insights import build_insights
 from bot.services.settings import LLM_LAST_ERROR, clear_setting, group_chat_id, set_setting
 from bot.services.stats import build_board
 from bot.services.tasks import CreateOutcome, Task
@@ -99,8 +100,8 @@ def announce_unblocked(db: Database, completed: Task, *, now: datetime, config: 
     said = 0
     day = outbox.local_day(now, config.tz)
     for task in task_service.newly_unblocked(db, completed.id):
-        if outbox.already_said(db, task_id=task.id, kind="unblocked", day=day):
-            continue
+        if not outbox.claim_saying(db, task_id=task.id, kind="unblocked", day=day):
+            continue  # the same claim that stops a restart repeating it
         owner = owner_of(db, task)
         outbox.queue(
             db,
@@ -108,7 +109,6 @@ def announce_unblocked(db: Database, completed: Task, *, now: datetime, config: 
             text=render.unblocked(task, owner, now=now, tz=config.tz),
             send_after=outbox.release_at(now, owner, tz=config.tz),
         )
-        outbox.remember_said(db, task_id=task.id, kind="unblocked", day=day)
         said += 1
     return said
 
@@ -180,6 +180,9 @@ def build_view(
             tz=config.tz,
             blocked=blocked,
         )
+    elif view == "stats":
+        report = build_insights(db, now=now, tz=config.tz)
+        return render.stats(report, tz=config.tz), render.stats_keyboard()
     elif view == "board":
         board = build_board(db, now=now, tz=config.tz)
         return render.board(board, tz=config.tz), render.board_keyboard()

@@ -113,6 +113,24 @@ def pending(db: Database) -> list[Queued]:
     return [_row_to_queued(row) for row in rows]
 
 
+def claim(db: Database, message_id: int, *, now: datetime) -> bool:
+    """Take ownership of a queued message. Only one caller can win.
+
+    The tick and the hourly digest both flush, and they collide at the top of
+    every hour: reading the unsent rows and marking them sent are separated by a
+    network round trip, so without this the same reminder goes out twice.
+    """
+    cursor = db.execute(
+        "UPDATE outbox SET sent_at = ? WHERE id = ? AND sent_at IS NULL", (to_iso(now), message_id)
+    )
+    return cursor.rowcount == 1
+
+
+def release(db: Database, message_id: int) -> None:
+    """Hand a claimed message back after a failed send, so the next tick retries it."""
+    db.execute("UPDATE outbox SET sent_at = NULL WHERE id = ?", (message_id,))
+
+
 def mark_sent(db: Database, message_id: int, *, now: datetime) -> None:
     db.execute("UPDATE outbox SET sent_at = ? WHERE id = ?", (to_iso(now), message_id))
 
@@ -143,10 +161,21 @@ def already_said(db: Database, *, task_id: int, kind: str, day: str) -> bool:
 
 
 def remember_said(db: Database, *, task_id: int, kind: str, day: str) -> None:
-    db.execute(
+    claim_saying(db, task_id=task_id, kind=kind, day=day)
+
+
+def claim_saying(db: Database, *, task_id: int, kind: str, day: str) -> bool:
+    """Reserve the right to say this once. True for the first caller only.
+
+    `already_said` followed by `remember_said` is two statements with a gap
+    between them; the primary key makes this one, so a second planner in a second
+    process cannot slip through it.
+    """
+    cursor = db.execute(
         "INSERT OR IGNORE INTO notifications_sent (task_id, kind, day) VALUES (?, ?, ?)",
         (task_id, kind, day),
     )
+    return cursor.rowcount == 1
 
 
 def local_day(moment: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:

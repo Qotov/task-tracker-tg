@@ -453,3 +453,75 @@ def test_an_overdue_ping_says_how_late_and_carries_buttons(db: Database) -> None
     queued = [message for message in outbox.pending(db) if "Still open" in message.text][0]
     assert "2 days late" in queued.text
     assert queued.keyboard is not None and "t:done:" in queued.keyboard
+
+
+# --- doing a thing exactly once --------------------------------------------
+
+
+def test_two_flushes_at_the_same_moment_send_one_message(db: Database) -> None:
+    """The tick and the hourly digest collide at :00; only one may send."""
+    import asyncio
+
+    from bot.scheduler import flush_outbox
+
+    class SlowBot:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send_message(self, chat_id: int, text: str, reply_markup: object = None) -> None:
+            await asyncio.sleep(0.02)  # the network round trip that opens the gap
+            self.sent.append(text)
+
+    outbox.queue(db, chat_id=1, text="⏰ your reminder", send_after=NOW)
+    bot = SlowBot()
+
+    async def both() -> None:
+        await asyncio.gather(
+            flush_outbox(bot, db, now=NOW),  # type: ignore[arg-type]
+            flush_outbox(bot, db, now=NOW),  # type: ignore[arg-type]
+        )
+
+    asyncio.run(both())
+
+    assert len(bot.sent) == 1
+    assert outbox.pending(db) == []
+
+
+def test_a_failed_send_is_handed_back_for_the_next_tick(db: Database) -> None:
+    import asyncio
+
+    from aiogram.exceptions import TelegramAPIError
+
+    from bot.scheduler import flush_outbox
+
+    class BrokenBot:
+        async def send_message(self, chat_id: int, text: str, reply_markup: object = None) -> None:
+            raise TelegramAPIError(method=None, message="nope")  # type: ignore[arg-type]
+
+    outbox.queue(db, chat_id=1, text="⏰ your reminder", send_after=NOW)
+
+    asyncio.run(flush_outbox(BrokenBot(), db, now=NOW))  # type: ignore[arg-type]
+
+    assert len(outbox.pending(db)) == 1  # still queued, will be retried
+
+
+def test_only_one_caller_may_say_a_thing(db: Database) -> None:
+    assert outbox.claim_saying(db, task_id=1, kind="remind", day="2026-09-15") is True
+    assert outbox.claim_saying(db, task_id=1, kind="remind", day="2026-09-15") is False
+
+
+def test_completing_twice_rolls_one_next_instance(db: Database, robin: User) -> None:
+    """A double tap must not produce two copies of a repeating task."""
+    from bot.services.recurrence import Recurrence
+    from bot.services.tasks import complete_task, set_recurrence
+
+    task = _task(db, "take the bins out", due_at=NOW)
+    set_recurrence(db, task.id, rule=Recurrence("daily"))
+
+    first = complete_task(db, task.id, now=NOW)
+    second = complete_task(db, task.id, now=NOW)
+
+    assert first.next_instance is not None
+    assert second.already_done is True
+    assert second.next_instance is None
+    assert len(db.query("SELECT * FROM tasks")) == 2  # the original and exactly one copy

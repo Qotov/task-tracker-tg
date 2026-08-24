@@ -92,6 +92,14 @@ async def cmd_menu(message: Message, db: Database, config: Config) -> None:
     await _show_view("menu", message, db, user=user, config=config)
 
 
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, db: Database, config: Config) -> None:
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    await _show_view("stats", message, db, user=user, config=config)
+
+
 @router.message(Command("board"))
 async def cmd_board(message: Message, db: Database, config: Config) -> None:
     user = register_sender(message, db)

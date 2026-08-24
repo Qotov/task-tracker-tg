@@ -174,12 +174,13 @@ async def on_task_button(
         return
     if updated.status == "done":
         announce_unblocked(db, updated, now=now, config=config)
+    # Pop unconditionally: leaving it here would leak, and a card we cannot edit
+    # is no reason to keep the next turn of a repeating task in memory.
+    following = _repeated.pop(updated.id, None)
     if card is not None:
         await refresh_card(card, db, updated, now=now, config=config)
-        if action == "done" and _repeated.get(updated.id) is not None:
-            await send_card(
-                card, db, _repeated.pop(updated.id), now=now, config=config, lead="🔁 Next one\n"
-            )
+        if following is not None:
+            await send_card(card, db, following, now=now, config=config, lead="🔁 Next one\n")
     await callback.answer(toast)
 
 

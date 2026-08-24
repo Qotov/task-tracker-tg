@@ -210,7 +210,10 @@ def test_a_user_without_a_username_still_gets_a_short(db: Database) -> None:
 
 
 def test_migrations_are_applied_once(db: Database) -> None:
-    assert db.schema_version() == 1
+    from bot.db import MIGRATIONS_DIR
+
+    highest = max(int(path.name.split("_")[0]) for path in MIGRATIONS_DIR.glob("*.sql"))
+    assert db.schema_version() == highest
     assert db.migrate() == []
 
 

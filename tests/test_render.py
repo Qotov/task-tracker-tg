@@ -149,6 +149,7 @@ def test_the_menu_leads_with_adding_and_reaches_every_view() -> None:
         "m:overdue",
         "m:mine",
         "m:board",
+        "m:stats",
         "m:help",
     ]
     assert _labels(markup)[0] == "➕ New task"

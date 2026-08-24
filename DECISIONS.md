@@ -216,6 +216,16 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - **✏️ Type a date** sits in the reschedule row because six presets cannot cover "next Tuesday at 14:30", and a card that can only be postponed in fixed jumps sends you back to typing `/due`. It reuses the same one-message prompt as notes and subtasks, and the answer goes through the same `parse_when` as everything else, so there is one date syntax in the whole bot rather than two.
 - Text the prompt cannot read changes nothing and says so, rather than guessing at a date.
 
+## Audit pass
+
+- Reading a row, deciding on it, and writing it back is three statements with two gaps in them; every place that did it is now one conditional write whose `rowcount` decides the outcome. That covers sending a queued message, closing a task, and claiming the right to say something once.
+- A failed send hands its claim back rather than staying marked sent, so a Telegram outage delays a reminder instead of losing it.
+- `002_task_events.sql` adds an append-only history because `tasks` holds only the present and `done_at` is destroyed by reopening; every trend, streak and rate in `/stats` is derived from it, and the migration backfills what the current rows can still prove.
+- `/stats` shows a sentence for every number it draws. "You closed 23 tasks" is trivia; "the list is growing — 12 added against 7 closed" is something to act on.
+- A weekday pattern is only claimed once there are at least six completions behind it: narrating noise as a habit would make the whole report untrustworthy.
+- A streak counts to yesterday when today is still quiet, because a streak that resets at 00:01 punishes you for not having started.
+- Priorities were asked for and not built: invariant 1 forbids them, and reversing that is the owner's decision rather than a silent change. `docs/AUDIT.md` records it with the other open questions.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.
