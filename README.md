@@ -142,10 +142,22 @@ names and captions and sends the matches back, each captioned with its task.
 `off`. When a repeating task is closed the next one appears with its dates
 shifted; its subtasks come with it, its notes do not.
 
-## Running it on a server
+## Keeping it running
 
-See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, including the
-macOS stopgap and how to move the database.
+On a Mac, hand it to `launchd` — it then survives a closed terminal, a logout and
+a crash, and starts again at login:
+
+```bash
+make service
+```
+
+`make service-log` follows it, `make service-stop` stops it for good. It does not
+run while the Mac is asleep; nothing is lost, but a digest due at 08:00 arrives
+when the lid opens. `sudo pmset -c sleep 0` fixes that while on charger.
+
+For reminders that always land on time, run it on something that stays awake.
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the VPS walkthrough and how to move the
+database across.
 
 ```bash
 sudo cp deploy/bot.service /etc/systemd/system/task-tracker-tg.service

@@ -1,20 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  macOS stopgap: keeps the bot running after you close the terminal, and starts
-  it again at login and after a crash.
+  Keeps the bot running on a Mac: starts at login, survives a closed terminal
+  and a logout, and is restarted if it ever exits.
 
-  It does NOT run while the Mac is asleep. A laptop that sleeps overnight will
-  not send the morning digest until it wakes; the outbox holds everything, so
-  nothing is lost, it just arrives late. For reminders that arrive on time, run
-  it on a machine that stays awake — see docs/DEPLOY.md.
+  It does NOT run while the Mac is asleep. Nothing is lost — the outbox holds
+  every notification and delivers it on the next tick — but a digest due at 08:00
+  arrives when the lid opens. For reminders that land on time, run it on a
+  machine that stays awake; see docs/DEPLOY.md.
 
-  Install:
-    cp deploy/com.task-tracker.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.task-tracker.plist
-  Stop:
-    launchctl unload ~/Library/LaunchAgents/com.task-tracker.plist
-  Logs:
-    tail -f /tmp/task-tracker.log
+  Install:  make service
+  Stop:     make service-stop
+  Logs:     tail -f /tmp/task-tracker.log
 -->
 <plist version="1.0">
 <dict>
@@ -37,6 +33,14 @@
   <true/>
   <key>KeepAlive</key>
   <true/>
+
+  <!-- If it dies on startup — a broken .env, say — do not respawn in a tight
+       loop. Ten seconds is long enough to read the log and fix it. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
 
   <key>StandardOutPath</key>
   <string>/tmp/task-tracker.log</string>

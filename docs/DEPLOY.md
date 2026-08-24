@@ -53,20 +53,46 @@ sent to you every night — off-site backup with no extra service.
 
 ## Option B — this Mac, in the background
 
-Better than a terminal window, worse than a server: it survives a closed
-terminal, a crash and a logout, but not sleep.
+Better than a terminal window, worse than a server. It survives a closed
+terminal, a logout and a crash, and starts again at login. It does not run while
+the Mac is asleep.
 
 ```bash
-cp deploy/com.task-tracker.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.task-tracker.plist
-tail -f /tmp/task-tracker.log
+make service        # install and start it
+make service-log    # watch it
+make service-stop   # stop it, and stop it coming back
 ```
 
-To stop it: `launchctl unload ~/Library/LaunchAgents/com.task-tracker.plist`.
+`make service` kills any copy you started by hand first, so the two cannot fight
+over `getUpdates`. `KeepAlive` restarts the bot if it ever exits; a ten-second
+`ThrottleInterval` means a broken `.env` produces one message every ten seconds in
+the log rather than a spin.
 
-To keep the Mac awake while it runs: `caffeinate -s` in a spare terminal, or
-System Settings → Lock Screen → *Prevent automatic sleeping when the display is
-off* while on power.
+### What sleep actually costs you
+
+Nothing is lost. The outbox holds every notification with the moment it may go
+out, and the first tick after waking delivers whatever came due. What you lose is
+punctuality: a digest due at 08:00 on a sleeping laptop arrives when you open the
+lid.
+
+Check what your Mac does:
+
+```bash
+pmset -g | grep -E "^ *(sleep|powernap|tcpkeepalive)"
+```
+
+`sleep 1` means it sleeps after a minute of idle on this power source. To keep it
+awake while plugged in, either run `caffeinate -s` in a spare terminal, or set it
+permanently (needs your password):
+
+```bash
+sudo pmset -c sleep 0
+```
+
+`-c` is "on charger only", so the battery still sleeps normally. This is the whole
+difference between a tracker that taps you on the shoulder and one that tells you
+this morning's news at lunchtime — and it is why a €4 VPS or a Raspberry Pi is
+the real answer.
 
 ## Moving the data across
 
