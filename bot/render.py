@@ -7,7 +7,7 @@ section 13: a short prefix, an action, and the task id — `t:done:12`.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from html import escape
 from zoneinfo import ZoneInfo
@@ -83,6 +83,9 @@ HOME_MENU = "☰ Menu"
 #: How many tasks in a list get their own "open this one" button.
 OPENABLE_IN_LIST = 8
 
+#: Rows shown per page. Beyond this a list stops being readable on a phone.
+PAGE_SIZE = 10
+
 
 class TaskAction(CallbackData, prefix="t"):
     """Button payload on a task card: renders as `t:done:12`."""
@@ -92,9 +95,10 @@ class TaskAction(CallbackData, prefix="t"):
 
 
 class MenuAction(CallbackData, prefix="m"):
-    """Button payload for navigation: renders as `m:today`."""
+    """Button payload for navigation: renders as `m:today:0`."""
 
     view: str
+    page: int = 0
 
 
 def start_text(user: User) -> str:
@@ -141,12 +145,14 @@ def help_text() -> str:
         "· a morning digest at your hour, and a nudge on anything you are waiting for\n"
         "· never between your quiet hours — it waits for the morning instead\n"
         "· say in the group when finishing one task frees another\n"
-        "· send a document back when you ask for it\n\n"
+        "· send a document back when you ask for it\n"
+        "· review the week on Sunday, at your digest hour\n\n"
         "<b>Commands</b>\n"
         "/menu — the button menu\n"
         "/new — add a task, guided\n"
         "/board — the tracker board\n"
         "/stats — progress, trends and what they mean\n"
+        "/find &lt;word&gt; — search every task\n"
         "/add &lt;text&gt; — add a task\n"
         "/sub &lt;id&gt; &lt;text&gt; — add a subtask under it\n"
         "/done &lt;id&gt; — close a task\n"
@@ -166,6 +172,7 @@ def help_text() -> str:
         "/export — every task as CSV and JSON\n"
         "/settings — digest hour, quiet hours, escalation\n"
         "/dash — rebuild the pinned dashboard\n"
+        "/group — make this the group I work in\n"
         "/health — is everything working?\n"
         "/help — this message"
     )
@@ -209,8 +216,29 @@ def task_keyboard(task: Task, *, partner: User | None = None) -> InlineKeyboardM
             _button("🗑 Drop", "drop", task.id),
         )
         return builder.as_markup()
-    builder.row(_button("↩️ Reopen", "reopen", task.id))
+    builder.row(
+        _button("↩️ Reopen", "reopen", task.id),
+        _button("🗑 Delete", "delete", task.id),
+    )
     return builder.as_markup()
+
+
+def confirm_delete_keyboard(task: Task) -> InlineKeyboardMarkup:
+    """Deleting is the one thing here that cannot be undone, so it is asked twice."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        _button("🗑 Yes, delete it", "delete_yes", task.id),
+        _button("← Keep it", "delete_no", task.id),
+    )
+    return builder.as_markup()
+
+
+CONFIRM_DELETE = (
+    "🗑 Delete <b>#{task_id} {title}</b> for good?\n"
+    "Its subtasks and history go too. Any scans filed against it are kept.\n"
+    "<i>This one cannot be undone.</i>"
+)
+DELETED = "🗑 <b>#{task_id} {title}</b> is gone."
 
 
 def reschedule_keyboard(task: Task) -> InlineKeyboardMarkup:
@@ -245,7 +273,7 @@ def menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(_view_button("⚠️ Overdue", "overdue"), _view_button("📋 Mine", "mine"))
     builder.row(_view_button("📊 Board", "board"), _view_button("📈 Progress", "stats"))
-    builder.row(_view_button("❓ Help", "help"))
+    builder.row(_view_button("🔍 Find", "find"), _view_button("❓ Help", "help"))
     return builder.as_markup()
 
 
@@ -256,14 +284,32 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def list_keyboard(tasks: Iterable[Task], *, view: str) -> InlineKeyboardMarkup:
+def list_keyboard(
+    tasks: Iterable[Task], *, view: str, page: int = 0, pages: int = 1
+) -> InlineKeyboardMarkup:
     """A list plus one button per task, so any of them can be opened with a thumb."""
     builder = InlineKeyboardBuilder()
     shown = list(tasks)[:OPENABLE_IN_LIST]
     for index in range(0, len(shown), 4):
         builder.row(*(_button(f"#{task.id}", "open", task.id) for task in shown[index : index + 4]))
-    builder.row(_view_button("🔄 Refresh", view), _view_button("☰ Menu", "menu"))
+    if pages > 1:
+        # Only the arrows that lead somewhere: a dead button is a small lie.
+        arrows = []
+        if page > 0:
+            arrows.append(_view_button("◀", view, page - 1))
+        arrows.append(_view_button(f"{page + 1}/{pages}", view, page))
+        if page + 1 < pages:
+            arrows.append(_view_button("▶", view, page + 1))
+        builder.row(*arrows)
+    builder.row(_view_button("🔄 Refresh", view, page), _view_button("☰ Menu", "menu"))
     return builder.as_markup()
+
+
+def page_of(tasks: Sequence[Task], page: int) -> tuple[list[Task], int, int]:
+    """One page of a list, the page actually shown, and how many there are."""
+    pages = max(1, -(-len(tasks) // PAGE_SIZE))
+    safe = min(max(page, 0), pages - 1)
+    return list(tasks[safe * PAGE_SIZE : (safe + 1) * PAGE_SIZE]), safe, pages
 
 
 def board_keyboard() -> InlineKeyboardMarkup:
@@ -301,8 +347,8 @@ def _button(text: str, action: str, task_id: int) -> InlineKeyboardButton:
     )
 
 
-def _view_button(text: str, view: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text, callback_data=MenuAction(view=view).pack())
+def _view_button(text: str, view: str, page: int = 0) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=MenuAction(view=view, page=page).pack())
 
 
 # --- cards -----------------------------------------------------------------
@@ -317,6 +363,7 @@ def task_card(
     creator: User | None = None,
     blockers: Iterable[Task] = (),
     holidays: str = "FR",
+    subtasks: tuple[int, int] | None = None,
 ) -> str:
     """The block shown after a task is created or changed.
 
@@ -347,6 +394,9 @@ def task_card(
         rule = parse_recurrence(task.recurrence)
         if rule is not None:
             lines.append(f"🔁 repeats {rule.describe()}")
+    if subtasks and subtasks[1]:
+        done, total = subtasks
+        lines.append(f"{progress_bar(done, total, width=6)} {done}/{total} subtasks")
     if task.parent_id is not None:
         lines.append(f"↳ subtask of #{task.parent_id}")
     if task.notes:
@@ -751,6 +801,47 @@ def health(report: Health, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
     return "\n".join(lines)
 
 
+# --- search ----------------------------------------------------------------
+
+FIND_PROMPT = "🔍 <b>What are you looking for?</b>\nSend a word from the title, project or notes."
+FIND_USAGE = "Use <code>/find landlord</code> — I look in titles, projects and notes."
+GROUP_IN_PRIVATE = "Send <code>/group</code> in the group you want me to work in."
+GROUP_ALREADY_OURS = "✅ This is already the group I work in."
+GROUP_CLAIMED = "✅ This is now the group I work in. I will pin the dashboard here."
+GROUP_MOVED = (
+    "✅ Moved. This is now the group I work in — the old one goes quiet, "
+    "and the dashboard will be pinned here."
+)
+NOTHING_FOUND = "Nothing matches <b>{query}</b>."
+
+
+def found_list(
+    tasks: Iterable[Task],
+    owners: Mapping[int, User],
+    *,
+    query: str,
+    now: datetime,
+    tz: ZoneInfo = DEFAULT_TZ,
+) -> str:
+    """Search results, open ones first, closed ones marked so they are not mistaken."""
+    listed = list(tasks)
+    header = f"🔍 <b>{escape(query)}</b>"
+    if not listed:
+        return f"{header}\n\n{NOTHING_FOUND.format(query=escape(query))}"
+
+    open_rows = [t for t in listed if t.status in ("todo", "waiting")]
+    closed_rows = [t for t in listed if t.status not in ("todo", "waiting")]
+    blocks = [f"{header} — {len(listed)} match(es)"]
+    if open_rows:
+        blocks.append(_rows(open_rows, now=now, tz=tz, owners=owners))
+    if closed_rows:
+        done = "\n".join(
+            f"<i>{_status_mark(task)}#{task.id} {escape(task.title)}</i>" for task in closed_rows
+        )
+        blocks.append(f"<b>Closed</b>\n{done}")
+    return "\n\n".join(blocks)
+
+
 # --- documents -------------------------------------------------------------
 
 DOC_SEARCH_PROMPT = "Which task? Send a word from its title or project."
@@ -926,6 +1017,12 @@ def stats(report: Insights, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
 
     blocks.append(f"<i>as of {local:%a %d %b %H:%M}</i>")
     return "\n\n".join(blocks)
+
+
+def weekly_review(report: Insights, *, tz: ZoneInfo = DEFAULT_TZ) -> str:
+    """Sunday evening: the week that was, in the shape of the progress view."""
+    body = stats(report, tz=tz)
+    return "🗓 <b>Your week</b>\n\n" + body.split("\n", 1)[1].lstrip()
 
 
 def stats_keyboard() -> InlineKeyboardMarkup:

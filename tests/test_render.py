@@ -108,12 +108,12 @@ def test_a_closed_card_keeps_only_reopen(db: Database, robin: User) -> None:
     task = _make(db)
     done = complete_task(db, task.id, now=NOW).task
     assert done is not None
-    assert _labels(render.task_keyboard(done)) == ["↩️ Reopen"]
+    assert _labels(render.task_keyboard(done)) == ["↩️ Reopen", "🗑 Delete"]
 
     other = _make(db, title="never mind")
     dropped = drop_task(db, other.id)
     assert dropped is not None
-    assert _payloads(render.task_keyboard(dropped)) == ["t:reopen:2"]
+    assert _payloads(render.task_keyboard(dropped)) == ["t:reopen:2", "t:delete:2"]
 
 
 def test_the_reschedule_row_offers_dates_and_a_way_back(db: Database, robin: User) -> None:
@@ -142,21 +142,22 @@ def test_the_menu_leads_with_adding_and_reaches_every_view() -> None:
     markup = render.menu_keyboard()
 
     assert _payloads(markup) == [
-        "m:new",
-        "m:today",
-        "m:week",
-        "m:month",
-        "m:overdue",
-        "m:mine",
-        "m:board",
-        "m:stats",
-        "m:help",
+        "m:new:0",
+        "m:today:0",
+        "m:week:0",
+        "m:month:0",
+        "m:overdue:0",
+        "m:mine:0",
+        "m:board:0",
+        "m:stats:0",
+        "m:find:0",
+        "m:help:0",
     ]
     assert _labels(markup)[0] == "➕ New task"
 
 
 def test_a_prompt_can_be_cancelled() -> None:
-    assert _payloads(render.cancel_keyboard()) == ["m:cancel"]
+    assert _payloads(render.cancel_keyboard()) == ["m:cancel:0"]
 
 
 def test_a_list_offers_one_button_per_task(db: Database, robin: User) -> None:
@@ -167,7 +168,7 @@ def test_a_list_offers_one_button_per_task(db: Database, robin: User) -> None:
     openers = [payload for payload in _payloads(markup) if payload.startswith("t:open:")]
     assert len(openers) == render.OPENABLE_IN_LIST
     assert openers[0] == f"t:open:{tasks[0].id}"
-    assert _payloads(markup)[-2:] == ["m:today", "m:menu"]
+    assert _payloads(markup)[-2:] == ["m:today:0", "m:menu:0"]
 
 
 def test_the_home_keyboard_labels_match_the_views() -> None:

@@ -29,7 +29,14 @@ from bot.services import tasks as task_service
 from bot.services.export import export_csv, export_json
 from bot.services.health import check as check_health
 from bot.services.recurrence import parse_recurrence
-from bot.services.settings import DASHBOARD_MESSAGE_ID, bind_group, clear_setting
+from bot.services.settings import (
+    DASHBOARD_MESSAGE_ID,
+    GROUP_CHAT_ID,
+    bind_group,
+    clear_setting,
+    group_chat_id,
+    set_int,
+)
 from bot.services.users import User, get_by_short
 
 router = Router(name="commands")
@@ -98,6 +105,43 @@ async def cmd_stats(message: Message, db: Database, config: Config) -> None:
     if user is None:  # pragma: no cover - the whitelist guarantees a sender
         return
     await _show_view("stats", message, db, user=user, config=config)
+
+
+@router.message(Command("find"))
+async def cmd_find(message: Message, command: CommandObject, db: Database, config: Config) -> None:
+    """Search every task, closed ones included."""
+    user = register_sender(message, db)
+    if user is None:  # pragma: no cover - the whitelist guarantees a sender
+        return
+    query = (command.args or "").strip()
+    if not query:
+        await message.answer(render.FIND_USAGE)
+        return
+    text, markup = build_view(
+        "find", db, user=user, now=datetime.now(UTC), config=config, query=query
+    )
+    await message.answer(text, reply_markup=markup)
+
+
+@router.message(Command("group"))
+async def cmd_group(message: Message, db: Database) -> None:
+    """Claim this group, or move the bot to it.
+
+    Without this, a group created after the first one is silent for ever and the
+    only fix is editing the database by hand.
+    """
+    register_sender(message, db)
+    if message.chat.type == ChatType.PRIVATE:
+        await message.answer(render.GROUP_IN_PRIVATE)
+        return
+    known = group_chat_id(db)
+    if known == message.chat.id:
+        await message.answer(render.GROUP_ALREADY_OURS)
+        return
+    set_int(db, GROUP_CHAT_ID, message.chat.id)
+    clear_setting(db, DASHBOARD_MESSAGE_ID)  # the old pin lives in the old group
+    dashboard.touch()
+    await message.answer(render.GROUP_MOVED if known else render.GROUP_CLAIMED)
 
 
 @router.message(Command("board"))

@@ -553,13 +553,106 @@ def newly_unblocked(db: Database, done_task_id: int) -> list[Task]:
 
 
 def blocked_map(db: Database, tasks: Iterable[Task]) -> dict[int, list[int]]:
-    """Which of these tasks are blocked, and by what — for greying them in a list."""
+    """Which of these tasks are blocked, and by what — for greying them in a list.
+
+    One query for the whole list rather than one per row: this runs on every
+    listing and on every tick, and a query per task is the first thing that would
+    hurt once a list is long.
+    """
+    wanted = [task.id for task in tasks]
+    if not wanted:
+        return {}
+    rows = db.query(
+        f"""
+        SELECT task_deps.task_id, task_deps.depends_on_id FROM task_deps
+        JOIN tasks AS blocker ON blocker.id = task_deps.depends_on_id
+        WHERE task_deps.task_id IN ({", ".join("?" for _ in wanted)})
+          AND blocker.status NOT IN ('done', 'dropped')
+        ORDER BY task_deps.depends_on_id
+        """,
+        wanted,
+    )
     blocked: dict[int, list[int]] = {}
-    for task in tasks:
-        blockers = blockers_of(db, task.id)
-        if blockers:
-            blocked[task.id] = [blocker.id for blocker in blockers]
+    for row in rows:
+        blocked.setdefault(int(row["task_id"]), []).append(int(row["depends_on_id"]))
     return blocked
+
+
+def blocked_ids(db: Database) -> set[int]:
+    """Every task currently waiting on something, in one query — for the tick."""
+    rows = db.query(
+        """
+        SELECT DISTINCT task_deps.task_id FROM task_deps
+        JOIN tasks AS blocker ON blocker.id = task_deps.depends_on_id
+        WHERE blocker.status NOT IN ('done', 'dropped')
+        """
+    )
+    return {int(row["task_id"]) for row in rows}
+
+
+def search(db: Database, query: str, *, limit: int = 20, include_closed: bool = True) -> list[Task]:
+    """Find a task by a word in its title, project or notes.
+
+    Past fifty tasks, scrolling is not a way to find anything. Closed tasks are
+    included by default because "what did we call that thing we did?" is the
+    other half of searching.
+    """
+    wanted = f"%{query.strip().lower()}%"
+    if not query.strip():
+        return []
+    closed = "" if include_closed else " AND status IN ('todo','waiting')"
+    rows = db.query(
+        f"""
+        SELECT * FROM tasks
+        WHERE (lower(title) LIKE ? OR lower(COALESCE(project, '')) LIKE ?
+               OR lower(COALESCE(notes, '')) LIKE ?){closed}
+        ORDER BY status IN ('done','dropped'), due_at IS NULL, due_at, id DESC
+        LIMIT ?
+        """,
+        (wanted, wanted, wanted, limit),
+    )
+    return [row_to_task(row) for row in rows]
+
+
+def subtask_progress(db: Database, parent_ids: Iterable[int]) -> dict[int, tuple[int, int]]:
+    """`{parent_id: (done, total)}` for a whole list, in one query."""
+    wanted = list(parent_ids)
+    if not wanted:
+        return {}
+    rows = db.query(
+        f"""
+        SELECT parent_id,
+               count(*) AS total,
+               sum(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done
+        FROM tasks WHERE parent_id IN ({", ".join("?" for _ in wanted)})
+        GROUP BY parent_id
+        """,
+        wanted,
+    )
+    return {int(row["parent_id"]): (int(row["done"] or 0), int(row["total"])) for row in rows}
+
+
+def delete_task(db: Database, task_id: int) -> Task | None:
+    """Remove a task for good, with its subtasks, links and history.
+
+    `/drop` hides a task; this is for the ones that should never have existed.
+    Its events go too, so a typo cannot skew the statistics for ever. Attachments
+    survive — the scan is worth more than the task it was filed against.
+    """
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    doomed = [task_id] + [child.id for child in list_subtasks(db, task_id)]
+    holes = ", ".join("?" for _ in doomed)
+    db.execute(f"UPDATE attachments SET task_id = NULL WHERE task_id IN ({holes})", doomed)
+    db.execute(f"DELETE FROM task_events WHERE task_id IN ({holes})", doomed)
+    db.execute(f"DELETE FROM notifications_sent WHERE task_id IN ({holes})", doomed)
+    db.execute(
+        f"DELETE FROM task_deps WHERE task_id IN ({holes}) OR depends_on_id IN ({holes})",
+        doomed + doomed,
+    )
+    db.execute(f"DELETE FROM tasks WHERE id IN ({holes})", doomed)
+    return task
 
 
 def blockers_of(db: Database, task_id: int) -> list[Task]:

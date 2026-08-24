@@ -67,21 +67,21 @@ A reminder arrived between a button press and its answer, wearing the same ⚠�
 the overdue list, and was read as part of the reply. Unprompted messages now open
 by naming themselves and carry the task's buttons.
 
-## Weaknesses not yet addressed
+### 7. Everything past a screenful was unreachable — FIXED
 
-Ordered by what a daily user would feel first.
+Nine weaknesses were listed here after the first pass. Eight are now closed.
 
-| # | Problem | Why it matters |
+| # | Problem | Resolution |
 | --- | --- | --- |
-| 1 | **No search.** `/docs` finds attachments; nothing finds a task by word. | Past ~50 tasks the only way to find one is to scroll a list. |
-| 2 | **Lists do not paginate.** Every open task is printed; only the first 8 get a button. | A 60-task `/mine` is a wall with no way to act on task 30. |
-| 3 | **No delete.** `/drop` hides a task but it stays for ever. | A typo task is permanent. |
-| 4 | **No task detail view.** A card shows blockers and notes but not its subtasks. | Subtasks are invisible unless you remember they exist. |
-| 5 | **The group cannot be re-bound.** First group wins, permanently. | Re-creating the group means editing the database by hand. |
-| 6 | **`N+1` queries** in `blocked_map` and the tick's `is_blocked`. | Invisible at two users; the first thing to hurt at scale. |
-| 7 | **No weekly review.** The digest is daily; nothing summarises a week. | The spec's own "three features that carry the value" logic argues for it. |
-| 8 | **No undo for a destructive edit.** Reopen exists; a wrong `/due` or `/own` does not. | The event log now makes this buildable. |
-| 9 | **Templates (phase 5) absent**, and `/new` collides with the spec's name for them. | The one unbuilt phase. |
+| 1 | **No search.** `/docs` found attachments; nothing found a task by word. | `/find <word>` and a 🔍 Find button search titles, projects and notes, closed tasks included and listed last. |
+| 2 | **Lists did not paginate.** Every task printed; only the first 8 had a button. | Ten rows a page with ◀ ▶ arrows. A stale button asking for page 99 lands on the last page rather than an empty one. |
+| 3 | **No delete.** `/drop` hid a task for ever. | 🗑 Delete on a closed card, behind a confirmation, taking subtasks, links, notifications and history with it. Attachments survive. |
+| 4 | **Subtasks invisible on the card.** | A card shows `▰▰▰▱▱▱ 1/2 subtasks`, in one query for a whole list. |
+| 5 | **The group could not be re-bound.** | `/group` claims the current group; the middleware lets that one command through an unclaimed group, or it could never be heard where it is needed. |
+| 6 | **`N+1` queries** in `blocked_map` and the tick. | One query per list and one per tick. |
+| 7 | **No weekly review.** | Sunday at each person's digest hour: the week's figures and what they mean, held for quiet hours like everything else. |
+| 8 | **No undo for a destructive edit.** | *Still open.* Reopen and the delete confirmation cover the dangerous cases; a wrong `/due` is one more press to correct. The event log makes real undo buildable when it earns its place. |
+| 9 | **Templates (phase 5).** | *Out of scope by instruction* — the owner asked for every phase except this one. `/new` still collides with the spec's name for it; `/from` is the suggested rename. |
 
 ## Open questions for the owner
 

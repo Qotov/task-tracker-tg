@@ -18,7 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from bot import render
+from bot import dashboard, render
 from bot.config import Config
 from bot.db import Database
 from bot.handlers import (
@@ -108,6 +108,10 @@ async def on_menu_button(
         await callback.answer()
         return
 
+    if callback_data.view == "find":
+        await _ask_for_text(callback, state, task_id=0, kind="find")
+        return
+
     if callback_data.view == "cancel":
         await state.clear()
         await callback.message.edit_text(render.CANCELLED)
@@ -115,7 +119,9 @@ async def on_menu_button(
         return
 
     now = datetime.now(UTC)
-    text, markup = build_view(callback_data.view, db, user=user, now=now, config=config)
+    text, markup = build_view(
+        callback_data.view, db, user=user, now=now, config=config, page=callback_data.page
+    )
     try:
         await callback.message.edit_text(text, reply_markup=markup)
     except TelegramBadRequest as error:
@@ -162,6 +168,31 @@ async def on_task_button(
 
     if action == "both":
         await _copy_for_partner(callback, db, task, now=now, config=config)
+        return
+
+    if action == "delete":
+        if card is not None:
+            await card.edit_text(
+                render.CONFIRM_DELETE.format(task_id=task.id, title=escape(task.title)),
+                reply_markup=render.confirm_delete_keyboard(task),
+            )
+        await callback.answer()
+        return
+
+    if action == "delete_no":
+        if card is not None:
+            await refresh_card(card, db, task, now=now, config=config)
+        await callback.answer("Kept")
+        return
+
+    if action == "delete_yes":
+        removed = task_service.delete_task(db, task.id)
+        if card is not None and removed is not None:
+            await card.edit_text(
+                render.DELETED.format(task_id=removed.id, title=escape(removed.title))
+            )
+        dashboard.touch()
+        await callback.answer("Deleted")
         return
 
     if action in {"when", "when_back"}:
@@ -303,6 +334,7 @@ async def _ask_for_text(
         "sub": render.SUBTASK_PROMPT,
         "note": render.NOTE_PROMPT,
         "due": render.DUE_PROMPT,
+        "find": render.FIND_PROMPT,
     }[kind]
     if isinstance(callback.message, Message):
         await callback.message.answer(prompt.format(task_id=task_id))
@@ -326,6 +358,11 @@ async def on_prompt_answer(
 
     now = datetime.now(UTC)
     kind = str(data.get("kind", "sub"))
+
+    if kind == "find":
+        text_view, markup = build_view("find", db, user=user, now=now, config=config, query=text)
+        await message.answer(text_view, reply_markup=markup)
+        return
 
     if kind == "attach_search":
         await _offer_tasks_for(message, db, attachment_id=int(data.get("task_id", 0)), query=text)

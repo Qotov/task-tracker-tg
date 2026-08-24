@@ -226,6 +226,18 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - A streak counts to yesterday when today is still quiet, because a streak that resets at 00:01 punishes you for not having started.
 - Priorities were asked for and not built: invariant 1 forbids them, and reversing that is the owner's decision rather than a silent change. `docs/AUDIT.md` records it with the other open questions.
 
+## Scale pass
+
+- Ten rows to a page: more than that stops being readable on a phone, and a list you cannot read is not a list. A page number from a stale button clamps to the last page rather than showing an empty one.
+- Only the arrows that lead somewhere are drawn. A `◀` on page one is a small lie.
+- Search covers titles, projects and notes, and includes closed tasks — "what did we call that thing we did?" is half of why anybody searches — but sorts them after the open ones so they cannot be mistaken for work outstanding.
+- Deleting is the only irreversible act in the bot, so it is asked twice, offered only on a closed card, and takes the task's subtasks, links, notifications and history with it. Attachments are kept and merely unfiled: the scan outlives the task it was filed against.
+- A deleted task's events go too, so a typo cannot skew the statistics for ever.
+- `/group` is the one command the middleware lets through an unclaimed group. Without that exception the command could never be heard in the group it exists to claim, and moving the bot would mean editing the database by hand.
+- Moving the group forgets the pinned dashboard id, because that message lives in the old group and editing it there would be talking to the wrong room.
+- The weekly review goes out on Sunday at each person's digest hour, when the week is actually over rather than when it is starting, and is held by quiet hours like everything else.
+- `blocked_map` and the tick's blocked check are one query each rather than one per task: invisible at two people, and the first thing that would hurt at scale.
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

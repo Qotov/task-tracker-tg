@@ -27,8 +27,9 @@ from bot.config import Config
 from bot.db import Database, to_iso
 from bot.services import outbox
 from bot.services.digest import build_digest
+from bot.services.insights import build_insights
 from bot.services.settings import LAST_TICK, group_chat_id, set_setting
-from bot.services.tasks import OPEN_STATUSES, Task, is_blocked, row_to_task
+from bot.services.tasks import OPEN_STATUSES, Task, blocked_ids, row_to_task
 from bot.services.users import User, get_user, list_users, partner_of
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,9 @@ OVERDUE_DAYS_SHOWN = 3
 
 #: How many days late a task must be before the group hears about it.
 ESCALATION_DAYS = 3
+
+#: The weekday the week is reviewed on. 6 is Sunday, when the week is actually over.
+REVIEW_WEEKDAY = 6
 
 
 def build_scheduler(bot: Bot, db: Database, config: Config) -> AsyncIOScheduler:
@@ -84,12 +88,13 @@ async def tick(bot: Bot, db: Database, config: Config) -> None:
 def plan_notifications(db: Database, *, now: datetime, tz: ZoneInfo) -> int:
     """Queue every notification that has become due. Returns how many were queued."""
     queued = 0
+    blocked = blocked_ids(db)  # one query, not one per task
     for task in _open_dated_tasks(db):
         owner = get_user(db, task.owner_id)
         if owner is None:  # pragma: no cover - owner_id is a foreign key
             continue
-        queued += _plan_reminder(db, task, owner, now=now, tz=tz)
-        queued += _plan_overdue(db, task, owner, now=now, tz=tz)
+        queued += _plan_reminder(db, task, owner, now=now, tz=tz, blocked=blocked)
+        queued += _plan_overdue(db, task, owner, now=now, tz=tz, blocked=blocked)
         queued += _plan_follow_up(db, task, owner, now=now, tz=tz)
         queued += _plan_escalation(db, task, owner, now=now, tz=tz)
     return queued
@@ -103,10 +108,12 @@ def _open_dated_tasks(db: Database) -> list[Task]:
     return [row_to_task(row) for row in rows]
 
 
-def _plan_reminder(db: Database, task: Task, owner: User, *, now: datetime, tz: ZoneInfo) -> int:
+def _plan_reminder(
+    db: Database, task: Task, owner: User, *, now: datetime, tz: ZoneInfo, blocked: set[int]
+) -> int:
     if task.status != "todo" or task.remind_at is None or task.remind_at > now:
         return 0
-    if is_blocked(db, task.id):
+    if task.id in blocked:
         return 0  # blocked tasks never generate reminders (section 10)
     return _queue_dm(
         db,
@@ -124,7 +131,9 @@ def _plan_reminder(db: Database, task: Task, owner: User, *, now: datetime, tz: 
     )
 
 
-def _plan_overdue(db: Database, task: Task, owner: User, *, now: datetime, tz: ZoneInfo) -> int:
+def _plan_overdue(
+    db: Database, task: Task, owner: User, *, now: datetime, tz: ZoneInfo, blocked: set[int]
+) -> int:
     if task.due_at is None or task.due_at >= now:
         return 0
     days_late = (now - task.due_at).days
@@ -134,7 +143,7 @@ def _plan_overdue(db: Database, task: Task, owner: User, *, now: datetime, tz: Z
         return 0
     if days_late > OVERDUE_DAYS_SHOWN:
         return 0  # after three days it only appears in the digest
-    if is_blocked(db, task.id):
+    if task.id in blocked:
         return 0
     return _queue_dm(
         db,
@@ -249,9 +258,35 @@ async def digest_round(bot: Bot, db: Database, config: Config) -> None:
     now = datetime.now(UTC)
     try:
         queue_digests(db, now=now, tz=config.tz)
+        queue_weekly_review(db, now=now, tz=config.tz)
     except Exception:  # pragma: no cover - a bad row must not kill the loop
         logger.exception("building digests failed")
     await flush_outbox(bot, db, now=now)
+
+
+def queue_weekly_review(db: Database, *, now: datetime, tz: ZoneInfo) -> int:
+    """On Sunday, at each person's digest hour: the week, and what it means.
+
+    The daily digest answers "what today?"; nothing answered "how did the week
+    go?", which is the question that actually changes what you do next week.
+    """
+    local = now.astimezone(tz)
+    if local.weekday() != REVIEW_WEEKDAY:
+        return 0
+    day = outbox.local_day(now, tz)
+    queued = 0
+    for user in list_users(db):
+        if user.digest_hour != local.hour:
+            continue
+        kind = f"review:{user.telegram_id}"
+        if not outbox.claim_saying(db, task_id=0, kind=kind, day=day):
+            continue
+        report = build_insights(db, now=now, tz=tz, days=7)
+        if report.is_empty:
+            continue
+        if outbox.deliver_to(db, user, text=render.weekly_review(report, tz=tz), now=now, tz=tz):
+            queued += 1
+    return queued
 
 
 def queue_digests(db: Database, *, now: datetime, tz: ZoneInfo) -> int:

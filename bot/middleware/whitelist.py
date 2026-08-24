@@ -20,6 +20,9 @@ from bot.services.settings import bind_group
 
 logger = logging.getLogger(__name__)
 
+#: The command that moves the bot to a new group.
+CLAIM_COMMAND = "/group"
+
 #: Chat types that count as "the group".
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
@@ -59,6 +62,12 @@ def chat_of(event: TelegramObject) -> Chat | None:
         message = getattr(carrier, "message", None)
         chat = getattr(message, "chat", None)
     return chat if isinstance(chat, Chat) else None
+
+
+def _is_claim_command(event: TelegramObject) -> bool:
+    """The one thing a whitelisted person may say in a group we do not work in."""
+    text = getattr(_carrier_of(event), "text", None) or ""
+    return text.split("@")[0].strip().lower().startswith(CLAIM_COMMAND)
 
 
 def _carrier_of(event: TelegramObject) -> TelegramObject | None:
@@ -105,6 +114,10 @@ class WhitelistMiddleware(BaseMiddleware):
         if chat is None or db is None or chat.type not in _GROUP_TYPES:
             return True
         if bind_group(db, chat.id):
+            return True
+        if _is_claim_command(event):
+            # Otherwise /group could never be received in the group it is meant
+            # to claim, and moving the bot would mean editing the database.
             return True
         logger.warning("dropping update from unclaimed group %s", chat.id)
         return False

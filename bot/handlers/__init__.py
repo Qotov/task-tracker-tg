@@ -84,6 +84,7 @@ def card_text(db: Database, task: Task, *, now: datetime, config: Config) -> str
         creator=get_user(db, task.created_by),
         blockers=task_service.blockers_of(db, task.id),
         holidays=config.holidays,
+        subtasks=task_service.subtask_progress(db, [task.id]).get(task.id),
     )
 
 
@@ -149,11 +150,22 @@ def _remember_llm_error(db: Database, reason: str | None) -> None:
 
 
 def build_view(
-    view: str, db: Database, *, user: User, now: datetime, config: Config
+    view: str,
+    db: Database,
+    *,
+    user: User,
+    now: datetime,
+    config: Config,
+    page: int = 0,
+    query: str = "",
 ) -> tuple[str, InlineKeyboardMarkup]:
     """One view, rendered the same way whether a command or a menu button asked for it."""
     owners = {person.telegram_id: person for person in list_users(db)}
 
+    if view == "find":
+        found = task_service.search(db, query) if query else []
+        text = render.found_list(found, owners, query=query, now=now, tz=config.tz)
+        return text, render.list_keyboard(found, view="menu")
     if view == "today":
         tasks = task_service.list_due_today(db, now=now, tz=config.tz)
         blocked = task_service.blocked_map(db, tasks)
@@ -180,6 +192,8 @@ def build_view(
             tz=config.tz,
             blocked=blocked,
         )
+    elif view == "search":  # pragma: no cover - alias kept out of the menu
+        return render.MENU_TEXT, render.menu_keyboard()
     elif view == "stats":
         report = build_insights(db, now=now, tz=config.tz)
         return render.stats(report, tz=config.tz), render.stats_keyboard()
@@ -191,7 +205,33 @@ def build_view(
     else:
         return render.MENU_TEXT, render.menu_keyboard()
 
-    return text, render.list_keyboard(tasks, view=view)
+    shown, page, pages = render.page_of(tasks, page)
+    if pages > 1:
+        text = _only_page(text, shown, tasks, now=now, tz=config.tz, owners=owners, view=view)
+    return text, render.list_keyboard(shown, view=view, page=page, pages=pages)
+
+
+def _only_page(
+    full: str,
+    shown: list[Task],
+    tasks: list[Task],
+    *,
+    now: datetime,
+    tz: object,
+    owners: dict[int, User],
+    view: str,
+) -> str:
+    """Re-render just this page, keeping the heading the full view produced."""
+    del full, tz
+    heading = {
+        "today": "Today",
+        "week": "The next seven days",
+        "month": "The month ahead",
+        "overdue": "Overdue",
+        "mine": "Your open tasks",
+    }.get(view, "Tasks")
+    rows = render.open_list(shown, title=heading, now=now)
+    return rows + f"\n\n<i>{len(shown)} of {len(tasks)} shown</i>"
 
 
 def creation_text(db: Database, outcome: CreateOutcome, *, now: datetime, config: Config) -> str:

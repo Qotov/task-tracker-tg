@@ -59,7 +59,11 @@ Everything else is buttons. A todo card carries **Done**, **+1 day**,
 In a private chat a keyboard sits under the text field with **Today**, **Week**,
 **Month**, **Overdue**, **Mine**, **Board**, **New task** and **Menu**. Every
 list puts an `#id` button under it, so a task can be opened and acted on without
-typing its number.
+typing its number, and pages ten at a time with ◀ ▶ once there are more.
+
+`/find landlord` searches titles, projects and notes — closed tasks included,
+listed after the open ones. A closed card also offers 🗑 **Delete**, behind a
+confirmation, for the tasks that should never have existed.
 
 ### What it does on its own
 
@@ -113,7 +117,7 @@ names and captions and sends the matches back, each captioned with its task.
 
 `/menu` `/new` `/board` `/add` `/sub` `/done` `/drop` `/due` `/own` `/note`
 `/wait` `/block` `/repeat` `/today` `/week` `/month` `/overdue` `/mine` `/docs`
-`/export` `/settings` `/dash` `/health` `/stats` `/help` `/start`
+`/export` `/settings` `/dash` `/health` `/stats` `/find` `/group` `/help` `/start`
 
 `/repeat 12 weekly:mon` also takes `daily`, `monthly:15`, `yearly:09-20` and
 `off`. When a repeating task is closed the next one appears with its dates
@@ -149,7 +153,7 @@ set, and keeps the last seven locally. A nightly cron entry:
 make test
 ```
 
-Runs `ruff check`, then `mypy`, then `pytest` — 312 tests, no network.
+Runs `ruff check`, then `mypy`, then `pytest` — 338 tests, no network.
 [docs/AUDIT.md](docs/AUDIT.md) records what a product audit found, what was fixed,
 and what is still weak. `make lint`
 checks formatting and `make fmt` applies it.
