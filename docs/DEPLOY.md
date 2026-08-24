@@ -16,40 +16,59 @@ messages and delivers them on the next start — but they arrive **late**. A bot
 that lives on a laptop that sleeps at night will deliver the morning digest at
 lunchtime.
 
+## Choosing where
+
+| | cost | always on | effort |
+| --- | --- | --- | --- |
+| **This Mac** (`make service`) | free | only while awake | one command, already done |
+| **VPS** — Hetzner, DigitalOcean, Scaleway | €4/mo | yes | one script |
+| **Raspberry Pi** at home | free after the Pi | yes | one script |
+| **fly.io / Railway** (container) | ~$2–4/mo | yes | needs their CLI |
+
+Anything that stays awake beats the laptop. The bot uses a few MB of RAM and no
+inbound ports, so the smallest box any provider sells is oversized for it.
+
 ## Option A — a small server (recommended)
 
-Any €4/month VPS, or a Raspberry Pi on your own network.
+A €4/month VPS or a Raspberry Pi. One script does all of it:
 
 ```bash
-# on the server, as root
-adduser --system --group --home /srv/task-tracker-tg taskbot
-apt install -y git sqlite3 curl
-curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --install-dir /usr/local/bin
+sudo bash deploy/install.sh
+```
 
-sudo -u taskbot git clone <your repo url> /srv/task-tracker-tg
-cd /srv/task-tracker-tg
-sudo -u taskbot cp .env.example .env    # then fill in BOT_TOKEN and ALLOWED_USER_IDS
-chmod 600 .env
-sudo -u taskbot uv sync
+It installs git, sqlite3 and uv; creates a `taskbot` system user; clones or
+updates the code; runs `uv sync --frozen`; writes and enables the systemd unit;
+and installs the nightly backup cron. Run it again after a `git pull` to update —
+it is idempotent.
 
-cp deploy/bot.service /etc/systemd/system/task-tracker-tg.service
-systemctl daemon-reload
-systemctl enable --now task-tracker-tg
-systemctl status task-tracker-tg
+The first run stops and tells you to fill in `.env`:
+
+```bash
+nano /srv/task-tracker-tg/.env      # BOT_TOKEN and ALLOWED_USER_IDS
+systemctl start task-tracker-tg
 journalctl -u task-tracker-tg -f
 ```
 
-The unit restarts on crash and starts at boot. Adjust `User`, `WorkingDirectory`
-and `EnvironmentFile` if you put it somewhere else.
+Set `BACKUP_CHAT_ID` to your own Telegram id as well, and the gzipped database
+arrives in your chat every night — off-site backup with no extra service.
 
-Nightly backup, as the same user:
+## Option C — a container (fly.io, Railway, a NAS)
 
+`Dockerfile` and `deploy/fly.toml` are in the repository. The database lives on a
+mounted volume at `/data`, never in the image, so a redeploy cannot take your
+tasks with it.
+
+```bash
+fly launch --no-deploy --copy-config --config deploy/fly.toml
+fly volumes create data --size 1
+fly secrets set BOT_TOKEN=... ALLOWED_USER_IDS=... TZ=Europe/Paris
+fly deploy
 ```
-15 3 * * * BOT_TOKEN=… DB_PATH=/srv/task-tracker-tg/tasks.db BACKUP_CHAT_ID=… /srv/task-tracker-tg/scripts/backup.sh
-```
 
-Set `BACKUP_CHAT_ID` to your own Telegram user id and the gzipped database is
-sent to you every night — off-site backup with no extra service.
+Two things to watch on any container host: give it a **persistent volume** (an
+ephemeral filesystem loses every task on redeploy), and make sure it is a
+**worker, not a web service** — this bot listens on no port, and a platform that
+scales to zero waiting for an HTTP request will stop it.
 
 ## Option B — this Mac, in the background
 

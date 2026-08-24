@@ -1,0 +1,27 @@
+# fly.io: one always-on machine with a volume. Roughly $2–4/month.
+#
+#   fly launch --no-deploy --copy-config --config deploy/fly.toml
+#   fly volumes create data --size 1
+#   fly secrets set BOT_TOKEN=... ALLOWED_USER_IDS=... TZ=Europe/Paris
+#   fly deploy
+#
+# Secrets are set with `fly secrets`, never in this file and never in the image.
+
+app = "task-tracker-tg"
+primary_region = "cdg"          # Paris; pick one near you
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+# No [http_service] and no [[services]]: this bot polls Telegram and listens on
+# nothing, so it must never be scaled to zero waiting for a request.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[env]
+  TZ = "Europe/Paris"

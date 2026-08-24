@@ -155,18 +155,22 @@ make service
 run while the Mac is asleep; nothing is lost, but a digest due at 08:00 arrives
 when the lid opens. `sudo pmset -c sleep 0` fixes that while on charger.
 
-For reminders that always land on time, run it on something that stays awake.
-See [docs/DEPLOY.md](docs/DEPLOY.md) for the VPS walkthrough and how to move the
-database across.
+For reminders that always land on time, run it on something that stays awake — a
+€4 VPS or a Raspberry Pi. On a fresh Debian or Ubuntu box, one script does all of
+it, and can be run again after a `git pull` to update:
 
 ```bash
-sudo cp deploy/bot.service /etc/systemd/system/task-tracker-tg.service
-sudo systemctl daemon-reload && sudo systemctl enable --now task-tracker-tg
+sudo bash deploy/install.sh
 ```
 
-The unit runs `uv run python -m bot.main` as a dedicated non-root user with
-`Restart=always`. Adjust `WorkingDirectory`, `User` and `EnvironmentFile` to match
-where you put it.
+It creates a `taskbot` system user, installs uv, syncs the locked dependencies,
+enables a systemd unit with `Restart=always`, and adds the nightly backup cron.
+The first run stops and asks you to fill in `.env`.
+
+There is also a `Dockerfile` and a `deploy/fly.toml` for any container host.
+[docs/DEPLOY.md](docs/DEPLOY.md) compares the options, covers moving the database
+across, and names the two traps — an ephemeral disk loses every task on redeploy,
+and a platform that scales to zero will stop a bot that listens on no port.
 
 ### Backups
 
