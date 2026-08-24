@@ -19,7 +19,6 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import InlineKeyboardMarkup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from bot import render
@@ -46,9 +45,29 @@ ESCALATION_DAYS = 3
 #: The weekday the week is reviewed on. 6 is Sunday, when the week is actually over.
 REVIEW_WEEKDAY = 6
 
+#: How late a digest may still be delivered when the bot was not running at the
+#: hour it was due. The scheduler holds no persistent job store, so a fire that
+#: falls while the process is down is never learned about — and because a digest
+#: is keyed to one hour, missing that hour used to mean missing the whole day in
+#: silence. A laptop asleep at 08:00, or any restart landing on the hour, was
+#: enough. Six hours keeps "your morning" recognisably a morning while covering
+#: an overnight sleep and every deploy.
+DIGEST_GRACE_HOURS = 6
+
+
+def _digest_is_due(local_hour: int, digest_hour: int) -> bool:
+    """Is `local_hour` inside the window in which this digest may still be sent?
+
+    Opens at the chosen hour and stays open for `DIGEST_GRACE_HOURS`, never past
+    midnight: a digest that says "today" must not arrive on the following day.
+    The once-a-day key in `notifications_sent` is what stops the open window from
+    sending more than one.
+    """
+    return digest_hour <= local_hour < min(digest_hour + DIGEST_GRACE_HOURS, 24)
+
 
 def build_scheduler(bot: Bot, db: Database, config: Config) -> AsyncIOScheduler:
-    """One tick, one hourly digest check. Both jobs are cheap and idempotent."""
+    """One job: a tick every minute. Idempotent, so it can safely repeat."""
     scheduler = AsyncIOScheduler(timezone=config.tz)
     scheduler.add_job(
         tick,
@@ -62,24 +81,30 @@ def build_scheduler(bot: Bot, db: Database, config: Config) -> AsyncIOScheduler:
         # sitting there, and makes a freshly started bot look dead to /health.
         next_run_time=datetime.now(config.tz),
     )
-    scheduler.add_job(
-        digest_round,
-        CronTrigger(minute=0, timezone=config.tz),
-        args=(bot, db, config),
-        id="digest",
-        max_instances=1,
-        coalesce=True,
-    )
+    # There is deliberately no separate cron job for digests. A cron fire that
+    # happens while the process is down is lost outright, and two jobs both
+    # flushing the outbox collided at the top of every hour. The tick runs every
+    # minute, is idempotent, and catches up after a restart.
     return scheduler
 
 
 async def tick(bot: Bot, db: Database, config: Config) -> None:
-    """The four checks of section 11, then post whatever has come due."""
+    """The four checks of section 11, the digests, then post what has come due.
+
+    Everything here is safe to run again: a second call on the same minute plans
+    nothing new and sends nothing twice. That is what lets one job a minute
+    replace a cron edge that a restart could fall through.
+    """
     now = datetime.now(UTC)
     try:
         plan_notifications(db, now=now, tz=config.tz)
     except Exception:  # pragma: no cover - a bad row must not kill the loop
         logger.exception("planning notifications failed")
+    try:
+        queue_digests(db, now=now, tz=config.tz)
+        queue_weekly_review(db, now=now, tz=config.tz)
+    except Exception:  # pragma: no cover - a bad row must not kill the loop
+        logger.exception("building digests failed")
     await flush_outbox(bot, db, now=now)
     # A heartbeat, so /health can say whether this loop is actually running.
     set_setting(db, LAST_TICK, to_iso(now) or "")
@@ -253,17 +278,6 @@ async def flush_outbox(bot: Bot, db: Database, *, now: datetime) -> int:
     return sent
 
 
-async def digest_round(bot: Bot, db: Database, config: Config) -> None:
-    """Once an hour: whoever asked for this hour gets their morning, if it has anything in it."""
-    now = datetime.now(UTC)
-    try:
-        queue_digests(db, now=now, tz=config.tz)
-        queue_weekly_review(db, now=now, tz=config.tz)
-    except Exception:  # pragma: no cover - a bad row must not kill the loop
-        logger.exception("building digests failed")
-    await flush_outbox(bot, db, now=now)
-
-
 def queue_weekly_review(db: Database, *, now: datetime, tz: ZoneInfo) -> int:
     """On Sunday, at each person's digest hour: the week, and what it means.
 
@@ -276,13 +290,18 @@ def queue_weekly_review(db: Database, *, now: datetime, tz: ZoneInfo) -> int:
     day = outbox.local_day(now, tz)
     queued = 0
     for user in list_users(db):
-        if user.digest_hour != local.hour:
+        if not _digest_is_due(local.hour, user.digest_hour):
             continue
         kind = f"review:{user.telegram_id}"
-        if not outbox.claim_saying(db, task_id=0, kind=kind, day=day):
+        if outbox.already_said(db, task_id=0, kind=kind, day=day):
             continue
         report = build_insights(db, now=now, tz=tz, days=7)
+        # Claim only once there is something worth sending. Claiming first spent
+        # the week's single chance on a silent Sunday morning, so a week that
+        # only became interesting later in the window was never reviewed at all.
         if report.is_empty:
+            continue
+        if not outbox.claim_saying(db, task_id=0, kind=kind, day=day):
             continue
         if outbox.deliver_to(db, user, text=render.weekly_review(report, tz=tz), now=now, tz=tz):
             queued += 1
@@ -295,7 +314,7 @@ def queue_digests(db: Database, *, now: datetime, tz: ZoneInfo) -> int:
     day = outbox.local_day(now, tz)
     queued = 0
     for user in list_users(db):
-        if user.digest_hour != hour:
+        if not _digest_is_due(hour, user.digest_hour):
             continue
         # `notifications_sent` has no user column, so the person goes in the kind.
         kind = f"digest:{user.telegram_id}"

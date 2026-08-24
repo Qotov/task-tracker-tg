@@ -11,9 +11,10 @@ from datetime import UTC, datetime, timedelta
 from freezegun import freeze_time
 
 from bot import render
+from bot.config import Config
 from bot.db import Database
 from bot.parser import DEFAULT_TZ
-from bot.scheduler import plan_notifications, queue_digests
+from bot.scheduler import DIGEST_GRACE_HOURS, plan_notifications, queue_digests
 from bot.services import outbox
 from bot.services.digest import build_digest
 from bot.services.settings import bind_group, group_chat_id
@@ -525,3 +526,72 @@ def test_completing_twice_rolls_one_next_instance(db: Database, robin: User) -> 
     assert second.already_done is True
     assert second.next_instance is None
     assert len(db.query("SELECT * FROM tasks")) == 2  # the original and exactly one copy
+
+
+# --- a digest the bot was not awake for ------------------------------------
+#
+# The scheduler keeps no persistent job store, so a fire that falls while the
+# process is down is never learned about. A digest is keyed to one hour, so
+# missing that hour used to mean missing the whole day without a trace: a laptop
+# asleep at 08:00, or any restart landing on the hour, was enough.
+
+
+def test_a_digest_missed_at_its_hour_is_still_sent_later(db: Database) -> None:
+    """The laptop was asleep at 08:00 and opened at 11:00. The digest still lands."""
+    _with_dm(db)
+    db.execute("UPDATE users SET digest_hour = ? WHERE telegram_id = ?", (8, ROBIN_ID))
+    _task(db, "due later today", due_at=NOW + timedelta(hours=4))
+
+    asleep = NOW.replace(hour=8)
+    assert queue_digests(db, now=asleep, tz=DEFAULT_TZ) == 1, "sanity: 08:00 would have sent"
+
+    # Now the same day with nothing sent at 08:00, as if the bot had been down.
+    db.execute("DELETE FROM notifications_sent")
+    db.execute("DELETE FROM outbox")
+
+    woke_up = NOW.replace(hour=11)
+    assert queue_digests(db, now=woke_up, tz=DEFAULT_TZ) == 1
+    assert len(outbox.pending(db)) == 1
+
+
+def test_a_digest_is_not_sent_once_the_grace_window_has_closed(db: Database) -> None:
+    """ "Your morning" must not arrive in the evening; it is dropped instead."""
+    _with_dm(db)
+    db.execute("UPDATE users SET digest_hour = ? WHERE telegram_id = ?", (8, ROBIN_ID))
+    _task(db, "due later today", due_at=NOW + timedelta(hours=4))
+
+    too_late = NOW.replace(hour=8 + DIGEST_GRACE_HOURS)
+    assert queue_digests(db, now=too_late, tz=DEFAULT_TZ) == 0
+    assert outbox.pending(db) == []
+
+
+def test_the_open_window_still_sends_only_one_digest(db: Database) -> None:
+    """The tick runs every minute across the whole window. Exactly one goes out."""
+    _with_dm(db)
+    db.execute("UPDATE users SET digest_hour = ? WHERE telegram_id = ?", (8, ROBIN_ID))
+    _task(db, "due later today", due_at=NOW + timedelta(hours=6))
+
+    sent = 0
+    for minute in range(0, DIGEST_GRACE_HOURS * 60, 5):
+        moment = NOW.replace(hour=8) + timedelta(minutes=minute)
+        sent += queue_digests(db, now=moment, tz=DEFAULT_TZ)
+    assert sent == 1
+    assert len(outbox.pending(db)) == 1
+
+
+def test_a_digest_never_crosses_midnight(db: Database) -> None:
+    """A late-evening digest hour must not spill its grace window into tomorrow."""
+    _with_dm(db)
+    db.execute("UPDATE users SET digest_hour = ? WHERE telegram_id = ?", (22, ROBIN_ID))
+    _task(db, "due tomorrow", due_at=NOW + timedelta(days=1))
+
+    tomorrow_morning = NOW.replace(hour=2) + timedelta(days=1)
+    assert queue_digests(db, now=tomorrow_morning, tz=DEFAULT_TZ) == 0
+
+
+def test_the_scheduler_registers_exactly_one_job(db: Database, config: Config) -> None:
+    """Two jobs flushing the outbox collided at the top of every hour."""
+    from bot.scheduler import build_scheduler
+
+    scheduler = build_scheduler(bot=None, db=db, config=config)  # type: ignore[arg-type]
+    assert [job.id for job in scheduler.get_jobs()] == ["tick"]

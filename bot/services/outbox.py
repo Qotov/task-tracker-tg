@@ -116,9 +116,11 @@ def pending(db: Database) -> list[Queued]:
 def claim(db: Database, message_id: int, *, now: datetime) -> bool:
     """Take ownership of a queued message. Only one caller can win.
 
-    The tick and the hourly digest both flush, and they collide at the top of
-    every hour: reading the unsent rows and marking them sent are separated by a
-    network round trip, so without this the same reminder goes out twice.
+    Reading the unsent rows and marking them sent are separated by a network
+    round trip, so without this the same reminder can go out twice — as it did
+    when a second job flushed the outbox alongside the tick. Only the tick
+    flushes now, but the claim stays: it is what makes that true by construction
+    rather than by everyone remembering.
     """
     cursor = db.execute(
         "UPDATE outbox SET sent_at = ? WHERE id = ? AND sent_at IS NULL", (to_iso(now), message_id)
