@@ -199,4 +199,4 @@ def test_the_card_says_that_it_repeats(db: Database, robin: User) -> None:
     repeating = set_recurrence(db, task.id, rule=Recurrence("weekly", "mon"))
     assert repeating is not None
 
-    assert "🔁 repeats every Monday" in render.task_card(repeating, robin, now=NOW)
+    assert "repeats every Monday" in render.task_card(repeating, robin, now=NOW)

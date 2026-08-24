@@ -187,10 +187,9 @@ def test_a_card_names_owner_date_and_project(db: Database, robin: User) -> None:
 
     text = render.task_card(task, robin, now=NOW)
 
-    assert "#1 <b>book the movers</b>" in text
-    assert "👤 robin" in text
-    assert "📅 Sun 20 Sep 09:00" in text
-    assert "🏷 #move" in text
+    assert text.startswith("⚪️ <b>book the movers</b>")  # the thing itself leads
+    assert "<i>Sunday · robin · move · #1</i>" in text  # everything about it recedes
+    assert "09:00" not in text  # the default hour is not information
 
 
 def test_a_card_shows_the_follow_up_when_waiting(db: Database, robin: User) -> None:
@@ -200,15 +199,15 @@ def test_a_card_shows_the_follow_up_when_waiting(db: Database, robin: User) -> N
 
     text = render.task_card(waiting, robin, now=NOW)
 
-    assert "⏳ waiting" in text
-    assert "Tue 22 Sep" in text
+    assert text.startswith("⏳ <b>book the movers</b>")
+    assert "chasing it" in text
 
 
 def test_a_card_points_at_its_parent(db: Database, robin: User) -> None:
     parent = _make(db)
     child = _make(db, title="pay the deposit", parent_id=parent.id)
 
-    assert "↳ subtask of #1" in render.task_card(child, robin, now=NOW)
+    assert "↳ part of #1" in render.task_card(child, robin, now=NOW)
 
 
 def test_a_card_shows_notes_and_escapes_them(db: Database, robin: User) -> None:
@@ -226,7 +225,10 @@ def test_a_card_shows_notes_and_escapes_them(db: Database, robin: User) -> None:
 def test_an_overdue_card_is_marked(db: Database, robin: User) -> None:
     task = _make(db, due_at=NOW - timedelta(days=1))
 
-    assert "⚠️" in render.task_card(task, robin, now=NOW)
+    text = render.task_card(task, robin, now=NOW)
+
+    assert text.startswith(render.GLYPH_OVERDUE)  # one glyph, in the left column
+    assert "a day late" in text  # said the way a person would say it
 
 
 # --- lists -----------------------------------------------------------------
@@ -245,10 +247,9 @@ def test_the_week_list_groups_by_day(db: Database, robin: User, sam: User) -> No
         list_week(db, now=NOW), {robin.telegram_id: robin, sam.telegram_id: sam}, now=NOW
     )
 
-    assert "<b>Wed 16 Sep</b>" in text
-    assert "<b>Fri 18 Sep</b>" in text
-    assert "09:00 · robin" in text
-    assert "14:00 · sam" in text
+    assert "<b>Wednesday</b> <i>16 Sep</i>" in text
+    assert "<b>Friday</b> <i>18 Sep</i>" in text
+    assert "robin" in text and "sam" in text
 
 
 def test_empty_lists_say_so(db: Database, robin: User) -> None:

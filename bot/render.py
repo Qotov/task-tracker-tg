@@ -21,7 +21,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.parser import DEFAULT_TZ
+from bot.parser import DEFAULT_DUE_HOUR, DEFAULT_DUE_MINUTE, DEFAULT_TZ
 from bot.services.digest import Digest
 from bot.services.docs import Attachment
 from bot.services.health import Health
@@ -82,6 +82,26 @@ HOME_MENU = "☰ Menu"
 
 #: How many tasks in a list get their own "open this one" button.
 OPENABLE_IN_LIST = 8
+
+# --- the design system -----------------------------------------------------
+#
+# Three rules, applied everywhere, so a message can be read without being
+# studied:
+#
+# 1. One glyph per line, in the left-hand column, carrying urgency and nothing
+#    else. They are mutually exclusive, so the column can be scanned.
+# 2. Three weights: **bold** is the thing itself, *italic* is everything about
+#    it, plain is its content. Metadata that cannot recede is noise.
+# 3. Dates are said the way a person would say them — "2 days late", "tomorrow",
+#    "Friday" — and a time is shown only when somebody actually chose one.
+
+GLYPH_OVERDUE = "🔴"
+GLYPH_TODAY = "🟠"
+GLYPH_LATER = "⚪️"
+GLYPH_BLOCKED = "🔒"
+GLYPH_WAITING = "⏳"
+GLYPH_DONE = "✅"
+GLYPH_DROPPED = "🗑"
 
 #: Rows shown per page. Beyond this a list stops being readable on a phone.
 PAGE_SIZE = 10
@@ -365,43 +385,50 @@ def task_card(
     holidays: str = "FR",
     subtasks: tuple[int, int] | None = None,
 ) -> str:
-    """The block shown after a task is created or changed.
-
-    `creator` is passed only when somebody else wrote the task, because "who asked
-    me to do this" is the question two people actually have.
-    """
-    lines = [f"{_status_mark(task)}#{task.id} <b>{escape(task.title)}</b>"]
-
-    details = [f"👤 {escape(owner.short)}"]
-    if creator is not None and creator.telegram_id != owner.telegram_id:
-        details[0] += f" · asked by {escape(creator.short)}"
-    if task.due_at is not None:
-        details.append(f"📅 {_when(task.due_at, now=now, tz=tz)}")
-    if task.project is not None:
-        details.append(f"🏷 #{escape(task.project)}")
-    lines.append(" · ".join(details))
-
+    """One task, in full. The title leads; everything about it recedes below."""
     waiting_for = list(blockers)
+    glyph = status_glyph(task, now=now, tz=tz, blocked=bool(waiting_for))
+    lines = [f"{glyph} <b>{escape(task.title)}</b>"]
+
+    about = []
+    if task.due_at is not None:
+        about.append(when_phrase(task.due_at, now=now, tz=tz))
+    about.append(escape(owner.short))
+    if creator is not None and creator.telegram_id != owner.telegram_id:
+        about.append(f"asked by {escape(creator.short)}")
+    if task.project is not None:
+        about.append(escape(task.project))
+    about.append(f"#{task.id}")
+    lines.append(f"<i>{' · '.join(about)}</i>")
+
     if waiting_for:
         listed = ", ".join(f"#{blocker.id} {escape(blocker.title)}" for blocker in waiting_for)
-        lines.append(f"🔒 blocked by {listed}")
-    closed_day = _closed_day(task.due_at, tz=tz, region=holidays)
-    if closed_day is not None:
-        lines.append(f"📛 {escape(closed_day)} — public holiday, offices will be shut")
+        lines.append(f"{GLYPH_BLOCKED} waiting for {listed}")
     if task.status == "waiting" and task.follow_up_at is not None:
-        lines.append(f"⏳ waiting — chase it up {_when(task.follow_up_at, now=now, tz=tz)}")
+        chase = when_phrase(task.follow_up_at, now=now, tz=tz)
+        lines.append(f"{GLYPH_WAITING} on somebody else — chasing it {chase}")
+    if subtasks and subtasks[1]:
+        done, total = subtasks
+        lines.append(f"{progress_bar(done, total, width=6)} <i>{done} of {total} steps</i>")
     if task.recurrence is not None:
         rule = parse_recurrence(task.recurrence)
         if rule is not None:
-            lines.append(f"🔁 repeats {rule.describe()}")
-    if subtasks and subtasks[1]:
-        done, total = subtasks
-        lines.append(f"{progress_bar(done, total, width=6)} {done}/{total} subtasks")
+            lines.append(f"🔁 <i>repeats {rule.describe()}</i>")
     if task.parent_id is not None:
-        lines.append(f"↳ subtask of #{task.parent_id}")
+        lines.append(f"<i>↳ part of #{task.parent_id}</i>")
+    closed_day = _closed_day(task.due_at, tz=tz, region=holidays)
+    if closed_day is not None:
+        lines.append(f"📛 <i>{escape(closed_day)} — a public holiday, offices shut</i>")
     if task.notes:
         lines.append("📝 " + escape(task.notes).replace("\n", "\n   "))
     return "\n".join(lines)
+
+
+def _closed_day(due_at: datetime | None, *, tz: ZoneInfo, region: str) -> str | None:
+    """The public holiday a due date lands on, when the feature is switched on."""
+    if due_at is None or region.upper() == "OFF":
+        return None
+    return holiday_name(due_at.astimezone(tz).date(), region=region)
 
 
 def added_subtasks(task: Task, titles: Iterable[str]) -> str:
@@ -414,19 +441,71 @@ def added_subtasks(task: Task, titles: Iterable[str]) -> str:
 def duplicate_hint(existing: Task) -> str:
     """Said when a new task reads like one that is already on a list."""
     return (
-        f"👀 <b>#{existing.id} {escape(existing.title)}</b> is already open and looks like "
-        "the same thing — close one if it is."
+        f"👀 <b>{escape(existing.title)}</b> is already open and looks like the same "
+        f"thing — <i>#{existing.id}</i>. Close one if it is."
     )
 
 
-def _closed_day(due_at: datetime | None, *, tz: ZoneInfo, region: str) -> str | None:
-    if due_at is None or region.upper() == "OFF":
-        return None
-    return holiday_name(due_at.astimezone(tz).date(), region=region)
+def status_glyph(
+    task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ, blocked: bool = False
+) -> str:
+    """The one character in the left column. Exactly one applies to any task."""
+    if task.status == "done":
+        return GLYPH_DONE
+    if task.status == "dropped":
+        return GLYPH_DROPPED
+    if blocked:
+        return GLYPH_BLOCKED
+    if task.status == "waiting":
+        return GLYPH_WAITING
+    if task.due_at is None:
+        return GLYPH_LATER
+    if task.due_at < now:
+        return GLYPH_OVERDUE
+    if task.due_at.astimezone(tz).date() == now.astimezone(tz).date():
+        return GLYPH_TODAY
+    return GLYPH_LATER
 
 
-def _status_mark(task: Task) -> str:
-    return {"done": "✅ ", "dropped": "🗑 ", "waiting": "⏳ "}.get(task.status, "")
+def when_phrase(due: datetime, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
+    """How a person would say it: "2 days late", "in 3 hours", "Friday", "20 Sep"."""
+    local_due, local_now = due.astimezone(tz), now.astimezone(tz)
+    seconds = (local_due - local_now).total_seconds()
+
+    if seconds < 0:
+        late = -seconds
+        if late < 3600:
+            return f"{max(1, int(late // 60))} min late"
+        if late < 86400 and local_due.date() == local_now.date():
+            return f"{int(late // 3600)} hours late"
+        days = (local_now.date() - local_due.date()).days
+        if days == 1:
+            return "a day late"
+        if days <= 13:
+            return f"{days} days late"
+        return f"late since {local_due:%-d %b}"
+
+    if local_due.date() == local_now.date():
+        if seconds < 3600:
+            return f"in {max(1, int(seconds // 60))} min"
+        if seconds < 6 * 3600:
+            return f"in {int(seconds // 3600)} hours"
+        return f"today{_at(local_due)}"
+    days = (local_due.date() - local_now.date()).days
+    if days == 1:
+        return f"tomorrow{_at(local_due)}"
+    if days < 7:
+        return f"{local_due:%A}{_at(local_due)}"
+    if local_due.year == local_now.year:
+        return f"{local_due:%-d %b}{_at(local_due)}"
+    return f"{local_due:%-d %b %Y}"
+
+
+def _at(local: datetime) -> str:
+    """A time only when somebody chose one; 09:00 is the default and says nothing."""
+    if (local.hour, local.minute) == (DEFAULT_DUE_HOUR, DEFAULT_DUE_MINUTE):
+        return ""
+    return f" at {local:%H:%M}"
 
 
 def created(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
@@ -464,21 +543,28 @@ def today_list(
     tz: ZoneInfo = DEFAULT_TZ,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
-    """Tasks due today or earlier, grouped by owner."""
-    grouped: dict[int, list[Task]] = {}
-    for task in tasks:
-        grouped.setdefault(task.owner_id, []).append(task)
+    """What to do now, sorted by how much it is shouting.
 
-    header = f"<b>Today — {now.astimezone(tz):%a %d %b}</b>"
-    if not grouped:
+    Grouped by urgency rather than by person: "what is on fire" is the question
+    this list answers, and grouping by owner scatters the answer across sections.
+    Whose it is rides along on each line.
+    """
+    listed = list(tasks)
+    header = f"📅 <b>Today</b> · <i>{now.astimezone(tz):%a %-d %b}</i>"
+    if not listed:
         return f"{header}\n\n{NOTHING_TODAY}"
 
-    blocks: list[str] = []
-    for owner_id, owned in sorted(grouped.items(), key=lambda item: _short_of(owners, item[0])):
-        name = _short_of(owners, owner_id)
-        rows = _rows(owned, now=now, tz=tz, blocked=blocked)
-        blocks.append(f"<b>{escape(name)}</b>\n{rows}")
-    return f"{header}\n\n" + "\n\n".join(blocks)
+    blocked = blocked or {}
+    late = [t for t in listed if t.id not in blocked and t.due_at is not None and t.due_at < now]
+    later = [t for t in listed if t.id not in blocked and t not in late]
+    stuck = [t for t in listed if t.id in blocked]
+
+    blocks = [header]
+    for title, group in (("Late", late), ("Still to come", later), ("Blocked", stuck)):
+        if group:
+            rows = _rows(group, now=now, tz=tz, owners=owners, blocked=blocked)
+            blocks.append(f"<b>{title}</b>\n{rows}")
+    return "\n\n".join(blocks)
 
 
 def week_list(
@@ -496,7 +582,7 @@ def week_list(
             continue
         grouped.setdefault(f"{task.due_at.astimezone(tz):%Y-%m-%d}", []).append(task)
 
-    header = "<b>The next seven days</b>"
+    header = "🗓 <b>The next seven days</b>"
     if not grouped:
         return f"{header}\n\n{NOTHING_THIS_WEEK}"
 
@@ -504,7 +590,7 @@ def week_list(
     for day, due in sorted(grouped.items()):
         when = datetime.strptime(day, "%Y-%m-%d")
         rows = _rows(due, now=now, tz=tz, owners=owners, with_time=True, blocked=blocked)
-        blocks.append(f"<b>{when:%a %d %b}</b>\n{rows}")
+        blocks.append(f"<b>{when:%A}</b> <i>{when:%-d %b}</i>\n{rows}")
     return f"{header}\n\n" + "\n\n".join(blocks)
 
 
@@ -524,7 +610,7 @@ def month_list(
         local = task.due_at.astimezone(tz).date()
         grouped.setdefault(local - timedelta(days=local.weekday()), []).append(task)
 
-    header = "<b>The month ahead</b>"
+    header = "📆 <b>The month ahead</b>"
     if not grouped:
         return f"{header}\n\n{NOTHING_THIS_MONTH}"
 
@@ -559,7 +645,7 @@ def overdue_list(
 ) -> str:
     """Everything past due, oldest first."""
     listed = list(tasks)
-    header = "<b>Overdue</b>"
+    header = "🔴 <b>Overdue</b>"
     if not listed:
         return f"{header}\n\n{NOTHING_OVERDUE}"
     return f"{header}\n" + _rows(listed, now=now, tz=tz, owners=owners, blocked=blocked)
@@ -606,27 +692,23 @@ def _row(
     with_time: bool = False,
     blocked: Mapping[int, list[int]] | None = None,
 ) -> str:
+    """One line: glyph, the task, then everything about it in a lighter weight."""
+    del with_time  # the phrase carries the time when there is one worth showing
     blockers = (blocked or {}).get(task.id)
-    if blockers:
-        # Telegram has no grey, so a blocked line is locked and set in italics.
-        waiting_for = ", ".join(f"#{blocker}" for blocker in blockers)
-        return f"<i>🔒 #{task.id} {escape(task.title)} — blocked by {waiting_for}</i>"
+    glyph = status_glyph(task, now=now, tz=tz, blocked=bool(blockers))
 
-    line = f"• #{task.id} {escape(task.title)}"
-    bits: list[str] = []
-    if task.due_at is not None:
-        bits.append(
-            f"{task.due_at.astimezone(tz):%H:%M}"
-            if with_time
-            else _when(task.due_at, now=now, tz=tz)
-        )
+    about: list[str] = []
+    if blockers:
+        about.append("blocked by " + ", ".join(f"#{blocker}" for blocker in blockers))
+    elif task.due_at is not None:
+        about.append(when_phrase(task.due_at, now=now, tz=tz))
     if owners is not None:
-        bits.append(escape(_short_of(owners, task.owner_id)))
+        about.append(escape(_short_of(owners, task.owner_id)))
     if task.project is not None:
-        bits.append(f"#{escape(task.project)}")
-    if task.status == "waiting":
-        bits.append("waiting")
-    return line + (" — " + " · ".join(bits) if bits else "")
+        about.append(escape(task.project))
+    about.append(f"#{task.id}")
+
+    return f"{glyph} <b>{escape(task.title)}</b> — <i>{' · '.join(about)}</i>"
 
 
 def unblocked(task: Task, owner: User, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
@@ -647,21 +729,26 @@ def reminder(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     The tick runs once a minute, so a reminder is usually a few seconds past the
     due moment; scolding somebody for that would be absurd.
     """
-    del now
-    when = "" if task.due_at is None else f" — {task.due_at.astimezone(tz):%a %d %b %H:%M}"
-    return f"🔔 <b>Reminder</b>\n{escape(task.title)}{when} · #{task.id}"
+    if task.due_at is None:
+        about = f"#{task.id}"
+    elif abs((task.due_at - now).total_seconds()) < 900:
+        about = f"due now · #{task.id}"  # it fires at the due moment; be plain about it
+    else:
+        about = f"{when_phrase(task.due_at, now=now, tz=tz)} · #{task.id}"
+    return f"🔔 <b>Reminder</b>\n<b>{escape(task.title)}</b> — <i>{about}</i>"
 
 
 def overdue_ping(task: Task, *, days_late: int, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
-    del now
-    late = "a day late" if days_late == 1 else f"{days_late} days late"
-    when = "" if task.due_at is None else f", due {task.due_at.astimezone(tz):%a %d %b %H:%M}"
-    return f"⚠️ <b>Still open</b>\n{escape(task.title)} — {late}{when} · #{task.id}"
+    del days_late
+    late = "" if task.due_at is None else when_phrase(task.due_at, now=now, tz=tz) + " · "
+    return f"🔴 <b>Still open</b>\n<b>{escape(task.title)}</b> — <i>{late}#{task.id}</i>"
 
 
 def follow_up(task: Task, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     del now, tz
-    return f"⏳ <b>Still waiting</b>\n{escape(task.title)} · #{task.id} — no answer yet?"
+    return (
+        f"⏳ <b>Still waiting</b>\n<b>{escape(task.title)}</b> — <i>#{task.id}</i>\nNo answer yet?"
+    )
 
 
 def follow_up_keyboard(task: Task) -> InlineKeyboardMarkup:
@@ -687,9 +774,9 @@ def digest(data: Digest, *, now: datetime, tz: ZoneInfo = DEFAULT_TZ) -> str:
     blocks = [f"☀️ <b>Good morning, {escape(data.user.short)} — {now.astimezone(tz):%a %d %b}</b>"]
     for title, tasks in (
         ("Due today", data.due_today),
-        ("⚠️ Overdue", data.overdue),
-        ("🔓 Came free", data.unblocked),
-        ("⏳ Waiting on somebody", data.follow_ups),
+        ("Late", data.overdue),
+        ("Came free", data.unblocked),
+        ("Waiting on somebody", data.follow_ups),
     ):
         if tasks:
             rows = _rows(tasks, now=now, tz=tz)
@@ -836,7 +923,8 @@ def found_list(
         blocks.append(_rows(open_rows, now=now, tz=tz, owners=owners))
     if closed_rows:
         done = "\n".join(
-            f"<i>{_status_mark(task)}#{task.id} {escape(task.title)}</i>" for task in closed_rows
+            f"{status_glyph(task, now=now, tz=tz)} <i>{escape(task.title)} · #{task.id}</i>"
+            for task in closed_rows
         )
         blocks.append(f"<b>Closed</b>\n{done}")
     return "\n\n".join(blocks)
@@ -925,7 +1013,7 @@ def dashboard(
     for task in tasks:
         grouped.setdefault(task.owner_id, []).append(task)
 
-    blocks = [f"📌 <b>Today — {now.astimezone(tz):%a %d %b}</b>"]
+    blocks = [f"📌 <b>Today</b> · <i>{now.astimezone(tz):%a %-d %b}</i>"]
     if grouped:
         for owner_id, owned in sorted(grouped.items(), key=lambda item: _short_of(owners, item[0])):
             rows = _rows(owned, now=now, tz=tz, blocked=blocked)

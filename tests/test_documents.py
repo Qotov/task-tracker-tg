@@ -233,4 +233,5 @@ def test_a_blocked_task_is_greyed_on_the_dashboard(
 
     text = build_text(db, now=NOW, config=config)
 
-    assert f"🔒 #{blocked.id}" in text
+    assert render.GLYPH_BLOCKED in text
+    assert f"blocked by #{blocker.id}" in text

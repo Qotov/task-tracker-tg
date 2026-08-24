@@ -86,7 +86,7 @@ def test_a_card_says_who_asked_for_it(db: Database, robin: User, sam: User) -> N
 
     text = render.task_card(outcome.task, sam, now=NOW, creator=robin)
 
-    assert "👤 sam · asked by robin" in text
+    assert "sam · asked by robin" in text
 
 
 def test_a_card_stays_quiet_when_you_wrote_it_yourself(db: Database, robin: User) -> None:
@@ -212,7 +212,7 @@ def test_a_card_warns_when_the_offices_are_shut(db: Database, robin: User) -> No
 
     text = render.task_card(task, robin, now=NOW)
 
-    assert "📛 Fête nationale — public holiday, offices will be shut" in text
+    assert "Fête nationale" in text and "offices shut" in text
 
 
 def test_a_card_on_a_working_day_says_nothing_about_holidays(db: Database, robin: User) -> None:

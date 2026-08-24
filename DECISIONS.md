@@ -238,6 +238,18 @@ Every choice `docs/TASK.md` left open, with one line of reasoning each.
 - The weekly review goes out on Sunday at each person's digest hour, when the week is actually over rather than when it is starting, and is held by quiet hours like everything else.
 - `blocked_map` and the tick's blocked check are one query each rather than one per task: invisible at two people, and the first thing that would hurt at scale.
 
+## The design system
+
+- Everything the bot says now follows three rules, because the previous look was a list of features rendered one at a time rather than a designed surface.
+- **One glyph per line**, in the left column, carrying urgency and nothing else: 🔴 late · 🟠 today · ⚪️ later or undated · 🔒 blocked · ⏳ waiting · ✅ done · 🗑 dropped. They are mutually exclusive, so the column can be scanned rather than read.
+- **Three weights.** Bold is the thing itself, italic is everything *about* it, plain is its content. The old rows gave the id, the owner, the date and the title identical weight, so nothing could recede and the eye had nowhere to land.
+- **The title leads and the id goes last.** `#12 pay the deposit` put the least useful token in the most prominent position.
+- **Dates are said the way a person says them** — "2 days late", "in 3 hours", "tomorrow", "Friday", "20 Sep" — instead of `⚠️ Sun 13 Sep 10:30`, which is a machine reporting a timestamp and leaves the arithmetic to the reader.
+- **A time is shown only when somebody chose one.** 09:00 is the default, so printing it is printing noise the person never typed.
+- **`/today` groups by urgency, not by owner** — Late, Still to come, Blocked. "What is on fire" is the question that list answers, and grouping by person scattered the answer across sections; whose it is rides along on each line instead.
+- **No signal is given twice.** The digest headings dropped their emoji once the rows carried glyphs, and a waiting row stopped saying "waiting" next to ⏳.
+- A reminder fires at the due moment, so it says "due now" rather than pedantically computing "in 1 min".
+
 ## Testing
 
 - `tests/test_config.py` and `tests/test_tasks.py` were added beyond the two required files, because section 18 asks for unit tests of `services/tasks.py` and configuration failure is the first thing a new operator will hit.

@@ -256,7 +256,7 @@ def test_a_card_names_what_it_is_waiting_for(db: Database, robin: User, config: 
 
     text = card_text(db, mairie, now=NOW, config=config)
 
-    assert f"🔒 blocked by #{docs.id} collect the payslips" in text
+    assert f"🔒 waiting for #{docs.id} collect the payslips" in text
 
 
 # --- waiting ---------------------------------------------------------------

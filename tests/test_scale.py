@@ -243,7 +243,7 @@ def test_a_card_shows_how_its_subtasks_are_going(db: Database, robin: User, conf
 
     text = card_text(db, parent, now=NOW, config=config)
 
-    assert "1/2 subtasks" in text
+    assert "1 of 2 steps" in text
     assert subtask_progress(db, [parent.id]) == {parent.id: (1, 2)}
 
 

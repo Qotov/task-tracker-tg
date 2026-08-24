@@ -50,6 +50,25 @@ Any plain message becomes a task:
 without a time means 09:00 in your `TZ`. There are no priorities: the due date carries
 the urgency.
 
+Every line the bot writes follows one system: a single glyph in the left column
+for urgency (🔴 late · 🟠 today · ⚪️ later · 🔒 blocked · ⏳ waiting), the task in
+bold, and everything *about* it in italic afterwards — so a list can be scanned
+rather than read. Dates are said the way you would say them (*2 days late*, *in
+3 hours*, *Friday*), and a time appears only when you chose one.
+
+```
+📅 Today · Tue 15 Sep
+
+Late
+🔴 pay the deposit to the agency — 2 days late · robin · move · #1
+
+Still to come
+🟠 book the movers — today at 17:30 · robin · move · #2
+
+Blocked
+🔒 book the mairie appointment — blocked by #3 · sam · #4
+```
+
 Everything else is buttons. A todo card carries **Done**, **+1 day**,
 **Waiting**, **→ partner**, **Subtask**, **Both**, **Note**, **Reschedule** and
 **Drop**; a waiting card swaps in **+7 days** and **To do**; a closed card keeps

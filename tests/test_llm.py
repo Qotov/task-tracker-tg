@@ -286,4 +286,5 @@ def test_an_enriched_card_keeps_its_heading(db: Database, robin: User, config: C
 
     assert before.startswith("✍️ Added")
     assert after.startswith("✍️ Added")
-    assert "#admin" in after
+    assert "admin" in after
+    assert "admin" in after

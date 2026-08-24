@@ -199,7 +199,7 @@ def test_a_waiting_task_asks_whether_there_was_an_answer(db: Database) -> None:
 
     plan_notifications(db, now=NOW, tz=DEFAULT_TZ)
 
-    pings = [message for message in outbox.pending(db) if "no answer yet" in message.text]
+    pings = [message for message in outbox.pending(db) if "No answer yet" in message.text]
     assert len(pings) == 1
     assert pings[0].keyboard is not None  # extend by a week, or mark it done
 
@@ -266,7 +266,7 @@ def test_the_digest_has_all_four_sections(db: Database) -> None:
     assert not digest.is_empty
 
     text = render.digest(digest, now=NOW, tz=DEFAULT_TZ)
-    assert "Due today" in text and "Overdue" in text and "Came free" in text
+    assert "Due today" in text and "Late" in text and "Came free" in text
 
 
 def test_an_empty_digest_is_never_sent(db: Database) -> None:
@@ -428,7 +428,7 @@ def test_a_reminder_does_not_scold_you_for_the_ticks_own_delay(db: Database, rob
 
     assert "🔔 <b>Reminder</b>" in text  # obviously the bot speaking first
     assert "⚠️" not in text
-    assert "10:30" in text
+    assert "due now" in text  # not "24 seconds late"
 
 
 def test_a_ping_can_be_acted_on_where_it_lands(db: Database) -> None:
