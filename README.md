@@ -167,7 +167,7 @@ It creates a `taskbot` system user, installs uv, syncs the locked dependencies,
 enables a systemd unit with `Restart=always`, and adds the nightly backup cron.
 The first run stops and asks you to fill in `.env`.
 
-There is also a `Dockerfile` and a `deploy/fly.toml` for any container host.
+There is also a `Dockerfile` and a `fly.toml` for any container host.
 [docs/DEPLOY.md](docs/DEPLOY.md) compares the options, covers moving the database
 across, and names the two traps — an ephemeral disk loses every task on redeploy,
 and a platform that scales to zero will stop a bot that listens on no port.

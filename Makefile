@@ -30,9 +30,22 @@ service:
 	@sleep 3
 	@echo "started; follow it with: make service-log"
 
+# bootout alone only stops the running copy: the plist stays in LaunchAgents and
+# launchd starts it again at the next login. Remove the plist too, or "stopped"
+# is a promise this target cannot keep.
 service-stop:
-	@launchctl bootout gui/$$(id -u)/com.task-tracker 2>/dev/null || launchctl unload $(AGENT)
-	@echo "stopped. It will not come back until: make service"
+	@launchctl bootout gui/$$(id -u)/com.task-tracker 2>/dev/null || launchctl unload $(AGENT) 2>/dev/null || true
+	@rm -f $(AGENT)
+	@sleep 2
+	@pkill -f "python -m bot.main" 2>/dev/null || true
+	@if pgrep -f "python -m bot.main" >/dev/null 2>&1; then \
+		echo "still running, forcing"; pkill -9 -f "python -m bot.main" || true; sleep 1; \
+	fi
+	@if pgrep -f "python -m bot.main" >/dev/null 2>&1; then \
+		echo "FAILED to stop; something is still polling the token"; exit 1; \
+	else \
+		echo "stopped, and the agent is removed. It will not come back until: make service"; \
+	fi
 
 service-log:
 	tail -f /tmp/task-tracker.log

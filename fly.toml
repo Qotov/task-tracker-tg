@@ -1,0 +1,34 @@
+# fly.io: one always-on machine with a volume. Roughly $2/month.
+#
+# Run every command from the repository root:
+#
+#   fly launch --no-deploy --name task-tracker-tg
+#   fly volumes create data --size 1 --region cdg   # same region as primary_region
+#   fly secrets set BOT_TOKEN=... ALLOWED_USER_IDS=... GEMINI_API_KEY=...
+#   fly deploy
+#
+# There is deliberately no [build] section: flyctl then defaults to ./Dockerfile
+# in the app root, which is where this repo's Dockerfile lives, and the path
+# cannot break by being resolved from somewhere else.
+#
+# Secrets go through `fly secrets`, never in this file and never in the image.
+# TZ is NOT a secret — it lives in [env] below. DB_PATH is not set here either:
+# the Dockerfile's ENV puts the database on the volume.
+
+app = "task-tracker-tg"
+primary_region = "cdg"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+# No [http_service] and no [[services]]: this bot polls Telegram and listens on
+# nothing, so it must never be scaled to zero waiting for a request that will
+# never arrive. A volume attaches to one machine at a time, which is also what
+# keeps a deploy from ever running two pollers against the same bot token.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[env]
+  TZ = "Europe/Paris"

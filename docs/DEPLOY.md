@@ -54,21 +54,78 @@ arrives in your chat every night — off-site backup with no extra service.
 
 ## Option C — a container (fly.io, Railway, a NAS)
 
-`Dockerfile` and `deploy/fly.toml` are in the repository. The database lives on a
+`Dockerfile` and `fly.toml` are in the repository root. The database lives on a
 mounted volume at `/data`, never in the image, so a redeploy cannot take your
-tasks with it.
+tasks with it. Run every command from the repository root.
+
+**Step 0, and it is not optional: stop any other copy first.** Two processes
+polling one bot token give `Conflict: terminated by other getUpdates request`,
+and updates are split unpredictably between them — a task typed in the group
+lands in whichever database won that round.
 
 ```bash
-fly launch --no-deploy --copy-config --config deploy/fly.toml
-fly volumes create data --size 1
-fly secrets set BOT_TOKEN=... ALLOWED_USER_IDS=... TZ=Europe/Paris
+make service-stop
+launchctl list | grep task-tracker      # must print nothing
+pgrep -f "python -m bot.main"           # must print nothing
+```
+
+Then bring it up:
+
+```bash
+fly launch --no-deploy --name task-tracker-tg
+fly volumes create data --size 1 --region cdg
+fly secrets set BOT_TOKEN=... ALLOWED_USER_IDS=... GEMINI_API_KEY=...
 fly deploy
 ```
 
-Two things to watch on any container host: give it a **persistent volume** (an
-ephemeral filesystem loses every task on redeploy), and make sure it is a
-**worker, not a web service** — this bot listens on no port, and a platform that
-scales to zero waiting for an HTTP request will stop it.
+Give the volume the **same region as `primary_region`**, or the machine cannot
+attach it. `TZ` stays in `[env]` — it is not a secret. Do not set `DB_PATH`: the
+Dockerfile's `ENV DB_PATH=/data/tasks.db` is what puts the file on the volume.
+Leave `GEMINI_API_KEY` out and the second-chance parser silently switches off,
+with nothing in the logs to say why.
+
+### Moving an existing database across
+
+The first deploy comes up on an **empty** volume and looks perfectly healthy
+while being completely blank, so this step is easy to skip by accident. It has to
+come *after* the first deploy, because `fly ssh` needs a machine that is running.
+
+```bash
+sqlite3 tasks.db ".backup '/tmp/tasks.db'"   # online snapshot; never plain cp
+fly ssh sftp shell                            # then, inside the session:
+#   put /tmp/tasks.db /data/tasks.db.incoming
+```
+
+Upload *beside* the live file, verify it, and only then swap — so a truncated
+transfer cannot destroy what is already there:
+
+```bash
+fly ssh console -C "/bin/sh -c 'sqlite3 /data/tasks.db.incoming \"PRAGMA integrity_check; select count(*) from tasks;\"'"
+fly ssh console -C "/bin/sh -c 'mv /data/tasks.db.incoming /data/tasks.db'"
+fly apps restart task-tracker-tg
+```
+
+Take the snapshot only once the local bot has stopped, or any task created
+between the snapshot and the cutover is lost without a trace.
+
+### Two traps on any container host
+
+Give it a **persistent volume** — an ephemeral filesystem loses every task on
+redeploy. And make sure it runs as a **worker, not a web service**: this bot
+listens on no port, so a platform that scales to zero waiting for an HTTP request
+will simply stop it. That is why `fly.toml` has no `[http_service]` block.
+
+### What does not come across
+
+The nightly backup in Option A is a host cron entry, and there is no cron in the
+container — so on fly, **nothing backs the volume up**. A fly volume is a single
+unreplicated disk on one host. Until an in-process backup job exists, take one by
+hand now and then:
+
+```bash
+fly ssh console -C "/bin/sh -c 'sqlite3 /data/tasks.db \".backup /data/snap.db\"'"
+fly ssh sftp get /data/snap.db ./tasks-from-fly.db
+```
 
 ## Option B — this Mac, in the background
 
