@@ -1,60 +1,62 @@
+<div align="center">
+
 # task-tracker-tg
 
-A shared Telegram task bot for two people — a household, a project, anyone who
-shares a list of dated obligations. Two whitelisted Telegram accounts, one private
-group, one SQLite file, no web interface and nothing to host beyond one small
-process. See [docs/TASK.md](docs/TASK.md) for the
-full specification, [CLAUDE.md](CLAUDE.md) for the working rules, and
-[DECISIONS.md](DECISIONS.md) for every choice the spec left open.
+**A shared task tracker for two people, living entirely inside Telegram.**
 
-**Status: phases 1–4, 6 and 7 are built.** Templates (phase 5 — `/templates`,
-`/new <template> <date>` and the three YAML files) are the one thing not here.
+[![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)](https://docs.aiogram.dev/)
+[![SQLite](https://img.shields.io/badge/storage-SQLite-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Tests](https://img.shields.io/badge/tests-343%20passing-3fb950)](#development)
+[![Lint](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=D7FF64)](https://docs.astral.sh/ruff/)
+[![Types](https://img.shields.io/badge/types-mypy-1F5082)](https://mypy-lang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## Setup from zero
+</div>
 
-1. **Install [uv](https://docs.astral.sh/uv/)**, then `make sync` to create the
-   virtual environment with Python 3.12.
-2. **Create the bot.** Talk to [@BotFather](https://t.me/BotFather): `/newbot`,
-   pick a name and a username, and copy the token it gives you.
-3. **Get both Telegram user ids** — each of you messages
-   [@userinfobot](https://t.me/userinfobot), which replies with a number.
-4. **Write `.env`.** `cp .env.example .env`, then fill in `BOT_TOKEN` and both
-   ids in `ALLOWED_USER_IDS`, comma-separated. `.env` is gitignored and must
-   never be committed. Nobody outside that list gets any reply at all.
-5. **Set your Telegram usernames first.** Your handle in the bot (`@yourname`) is
-   taken from your Telegram username the first time you say `/start`, and never
-   changes after that.
-6. **`make run`.** The database is created on first start with mode 0600, and
-   the migrations are applied automatically.
-7. **Both of you send `/start`** in a private chat with the bot. That registers
-   you and is how the bot learns where to send reminders.
-8. **Create the group**, add both people and the bot, then in BotFather use
-   `/mybots → Bot Settings → Group Privacy → Turn off` so the bot can read plain
-   group messages. Without this, only commands reach it. The first group that
-   speaks to the bot is the one it works in; it stays silent in any other.
+---
 
-Run exactly one copy of the bot. Two copies polling the same token gives
-`Conflict: terminated by other getUpdates request` and neither works properly.
+Two people, one private group, and a stack of things that both of them need to
+happen on time — a move, a pile of official paperwork, a household. This is a bot
+for exactly that, and deliberately nothing more.
 
-## Using it
+A plain message in the group becomes a task. Everything after that is buttons.
+There is no web interface, no account to create, no app to install: the whole
+thing is one Python process, one SQLite file, and long polling. It runs happily
+on a Raspberry Pi.
 
-Any plain message becomes a task:
+**Design constraints, on purpose:**
+
+- **No priority field.** The due date carries the urgency. `!urgent` is stripped
+  and answered with a note that priorities are not supported.
+- **Exactly one owner per task.** Two signatures are two tasks — there is a
+  button for that.
+- **No notification ever lands inside quiet hours.** Anything that would is held
+  and delivered when the window closes. Nothing overrides it, not escalation, not
+  an overdue chase, not a digest.
+
+## Creating tasks
+
+Any message that is not a command becomes a task:
 
 ```
 @partner call the landlord about the notice tomorrow #move
 ```
 
-`@name` or `@me` sets the single owner, `#project` sets the project, and a date —
-`today`, `tomorrow`, `mon`…`sun`, `20/09`, `20.09`, `24 Sep`, `2026-09-20`,
-`+3d`, `+2w`, `+1m`, any of them with a time like `14:30` — sets when. A date
-without a time means 09:00 in your `TZ`. There are no priorities: the due date carries
-the urgency.
+| Syntax | Meaning |
+| --- | --- |
+| `@name`, `@me` | the single owner |
+| `#project` | groups related tasks |
+| `today`, `tomorrow`, `mon`…`sun` | the day |
+| `20/09`, `20.09`, `24 Sep`, `2026-09-20` | an explicit date |
+| `+3d`, `+2w`, `+1m` | relative to now |
+| `14:30` | a time; without one, a date means 09:00 |
 
-Every line the bot writes follows one system: a single glyph in the left column
-for urgency (🔴 late · 🟠 today · ⚪️ later · 🔒 blocked · ⏳ waiting), the task in
-bold, and everything *about* it in italic afterwards — so a list can be scanned
-rather than read. Dates are said the way you would say them (*2 days late*, *in
-3 hours*, *Friday*), and a time appears only when you chose one.
+## Reading them
+
+Every line follows one system: a glyph in the left column for urgency, the task
+in bold, and everything *about* it in italics afterwards — so a list can be
+scanned rather than read.
 
 ```
 📅 Today · Tue 15 Sep
@@ -69,126 +71,178 @@ Blocked
 🔒 book the mairie appointment — blocked by #3 · sam · #4
 ```
 
-Everything else is buttons. A todo card carries **Done**, **+1 day**,
-**Waiting**, **→ partner**, **Subtask**, **Both**, **Note**, **Reschedule** and
-**Drop**; a waiting card swaps in **+7 days** and **To do**; a closed card keeps
-**Reopen**. **Reschedule** offers Today / Tomorrow / +3 days / Next week /
-+1 month / +3 months / No date on the same card.
+🔴 late · 🟠 today · ⚪️ later · 🔒 blocked · ⏳ waiting · ✅ done
 
-In a private chat a keyboard sits under the text field with **Today**, **Week**,
-**Month**, **Overdue**, **Mine**, **Board**, **New task** and **Menu**. Every
-list puts an `#id` button under it, so a task can be opened and acted on without
-typing its number, and pages ten at a time with ◀ ▶ once there are more.
+Dates are phrased the way you would say them (*2 days late*, *in 3 hours*,
+*Friday*), and a time appears only when you chose one.
 
-`/find landlord` searches titles, projects and notes — closed tasks included,
-listed after the open ones. A closed card also offers 🗑 **Delete**, behind a
-confirmation, for the tasks that should never have existed.
+A task card carries **Done**, **+1 day**, **Waiting**, **→ partner**,
+**Subtask**, **Both**, **Note**, **Reschedule** and **Drop**. Waiting cards swap
+in **+7 days** and **To do**; closed cards keep **Reopen**. In a private chat a
+keyboard sits under the text field with **Today**, **Week**, **Month**,
+**Overdue**, **Mine**, **Board** and **New task**. Every list puts an `#id`
+button underneath, so a task can be opened without typing its number, and pages
+ten at a time once there are more.
 
-### What it does on its own
+## What it does on its own
 
-- **Reminds** the owner when a task is due, and once a day while it stays late —
-  for three days, after which it only appears in the digest.
+- **Reminds** the owner when a task falls due, then once a day while it stays
+  late — for three days, after which the digest carries it.
 - **A morning digest** at each person's chosen hour: due today, overdue, what
-  came free, and anything waiting on somebody.
-- **Never inside quiet hours.** A message that would land in your quiet window is
-  held and delivered when it ends. Nothing overrides this.
-- **Announces in the group** when finishing one task frees another.
+  came free, and anything waiting on someone.
+- **Announces in the group** when finishing one task unblocks another.
 - **Keeps a pinned dashboard** in the group, edited in place at most once every
   five seconds.
+- **Holds anything due inside quiet hours** until the window closes.
 
-`/stats` is the fortnight behind you: what you closed against what you added, a
-streak, how much of it made its date, the split between the two of you — and a
-sentence saying what each number means. It reads from an append-only event log,
-so reopening a task cannot rewrite last week.
+`/stats` reports the fortnight behind you — what you closed against what you
+added, a streak, how much of it made its date, and the split between the two of
+you, each with a sentence saying what the number means. It reads from an
+append-only event log, so reopening a task cannot rewrite last week.
 
-### For the two of you
+## Documents
 
-**👥 Both** puts a copy of an errand on the other list — a task has exactly one
-owner, so two signatures are two tasks. A card says *asked by …* when the other
-one wrote it for you. Adding something that already exists gets a quiet
-nudge naming it. A due date landing on a public holiday is flagged, because the offices will be
-shut — set `HOLIDAYS=off` in `.env` if that is not useful where you are (only
-`FR` ships a table today).
-
-### The optional second-chance parser
-
-The rule parser handles everything it recognises, offline, and always runs first.
-If you set `GEMINI_API_KEY` in `.env`, a message that it found **no date** in and
-that is longer than eight words gets one more reading by Gemini 2.5 Flash Lite —
-it fills in the date, the project and any obvious subtasks. *we really need to
-sort out the deposit before the inspection at the end of next month* becomes a
-task due 30 September with two steps under it.
-
-The task is saved and the card is on screen before the model is asked, so a slow
-or broken answer costs nothing. It never rewrites your title, never overrides a
-date the rules already found, and is abandoned after four seconds. With no key
-set it never runs and **nothing leaves your machine** — which is the default, and
-worth a conscious decision either way, since the vault holds document numbers.
-
-### Documents
-
-Send a scan or a photo to the bot and it offers the five newest open tasks, plus
+Send a scan or a photo and the bot offers the five newest open tasks, plus
 **Search** and **Keep without a task**. Only Telegram's `file_id` is stored —
-nothing is ever written to disk. `/docs lease` searches titles, projects, file
-names and captions and sends the matches back, each captioned with its task.
+nothing is written to disk. `/docs lease` searches titles, projects, file names
+and captions, and sends the matches back captioned with their task.
+
+## Optional AI date parsing
+
+The rule-based parser handles everything it recognises, offline, and always runs
+first. Set `GEMINI_API_KEY` and a message it found **no date** in, longer than
+eight words, gets a second reading that fills in the date, the project and any
+obvious subtasks:
+
+> *we really need to sort out the deposit before the inspection at the end of
+> next month* → a task due 30 September with two steps under it.
+
+The task is saved and its card is on screen **before** the model is asked, so a
+slow or failed answer costs nothing. It never rewrites your title, never
+overrides a date the rules already found, and is abandoned after four seconds.
+With no key set it never runs and nothing leaves your machine — which is the
+default, and worth a deliberate choice either way, since the document vault holds
+identifiers.
+
+## Setup
+
+**Requirements:** Python 3.12 and [uv](https://docs.astral.sh/uv/).
+
+1. **Create the bot.** Message [@BotFather](https://t.me/BotFather): `/newbot`,
+   pick a name and a username, copy the token.
+2. **Get both Telegram user ids** — each person messages
+   [@userinfobot](https://t.me/userinfobot), which replies with a number.
+3. **Set your Telegram usernames** before first use. Your handle in the bot
+   (`@yourname`) is taken from it at first `/start` and never changes after.
+4. **Configure and run:**
+
+   ```bash
+   uv sync
+   cp .env.example .env      # then fill it in
+   make run
+   ```
+
+   The database is created on first start with mode 0600 and migrations are
+   applied automatically.
+5. **Both people send `/start`** in a private chat with the bot. That registers
+   them and is how the bot learns where to send reminders.
+6. **Create the group**, add both people and the bot, then in BotFather use
+   `/mybots → Bot Settings → Group Privacy → Turn off` so plain group messages
+   reach it. The first group that talks to the bot is the one it works in; it
+   stays silent in any other.
+
+> Run exactly one copy. Two processes polling the same token produce
+> `Conflict: terminated by other getUpdates request` and neither works properly.
+
+### Configuration
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `BOT_TOKEN` | ✅ | — | from BotFather |
+| `ALLOWED_USER_IDS` | ✅ | — | comma-separated; nobody else gets any reply |
+| `DB_PATH` | | `./tasks.db` | where the SQLite file lives |
+| `TZ` | | `Europe/Paris` | display timezone; storage is always UTC |
+| `GEMINI_API_KEY` | | — | enables the second-chance parser |
+| `GEMINI_MODEL` | | `gemini-3.5-flash-lite` | model for that parser |
+| `BACKUP_CHAT_ID` | | — | chat the nightly backup is uploaded to |
+| `HOLIDAYS` | | `FR` | flag due dates on public holidays, or `off` |
+
+Startup fails loudly and specifically when a required variable is missing.
 
 ### Commands
 
-`/menu` `/new` `/board` `/add` `/sub` `/done` `/drop` `/due` `/own` `/note`
-`/wait` `/block` `/repeat` `/today` `/week` `/month` `/overdue` `/mine` `/docs`
-`/export` `/settings` `/dash` `/health` `/stats` `/find` `/group` `/help` `/start`
-
-`/repeat 12 weekly:mon` also takes `daily`, `monthly:15`, `yearly:09-20` and
-`off`. When a repeating task is closed the next one appears with its dates
-shifted; its subtasks come with it, its notes do not.
-
-## Keeping it running
-
-On a Mac, hand it to `launchd` — it then survives a closed terminal, a logout and
-a crash, and starts again at login:
-
-```bash
-make service
+```
+/menu   /new    /board  /add    /sub    /done   /drop   /due    /own
+/note   /wait   /block  /repeat /today  /week   /month  /overdue
+/mine   /docs   /export /find   /stats  /health /settings /dash
+/group  /help   /start
 ```
 
-`make service-log` follows it, `make service-stop` stops it for good. It does not
-run while the Mac is asleep; nothing is lost, but a digest due at 08:00 arrives
-when the lid opens. `sudo pmset -c sleep 0` fixes that while on charger.
+`/repeat 12 weekly:mon` also accepts `daily`, `monthly:15`, `yearly:09-20` and
+`off`. Closing a repeating task creates the next one with its dates shifted;
+subtasks come along, notes do not.
 
-For reminders that always land on time, run it on something that stays awake — a
-€4 VPS or a Raspberry Pi. On a fresh Debian or Ubuntu box, one script does all of
-it, and can be run again after a `git pull` to update:
+## Deployment
+
+On macOS, hand it to `launchd` — it then survives a closed terminal, a logout and
+a crash, and restarts at login:
+
+```bash
+make service        # make service-log follows it, make service-stop removes it
+```
+
+It does not run while the machine is asleep. Nothing is lost, but a digest due at
+08:00 arrives when the lid opens. `sudo pmset -c sleep 0` avoids that on mains
+power.
+
+For reminders that always land on time, run it somewhere that stays awake. On a
+fresh Debian or Ubuntu host one script installs a `taskbot` user, `uv`, a systemd
+unit with `Restart=always`, and a nightly backup:
 
 ```bash
 sudo bash deploy/install.sh
 ```
 
-It creates a `taskbot` system user, installs uv, syncs the locked dependencies,
-enables a systemd unit with `Restart=always`, and adds the nightly backup cron.
-The first run stops and asks you to fill in `.env`.
+A `Dockerfile` and a `fly.toml` are included for container hosts. Two traps apply
+to any of them: the database needs a **persistent volume**, or a redeploy erases
+every task; and it must run as a **worker, not a web service**, because it listens
+on no port and a platform that scales to zero will simply stop it.
 
-There is also a `Dockerfile` and a `fly.toml` for any container host.
-[docs/DEPLOY.md](docs/DEPLOY.md) compares the options, covers moving the database
-across, and names the two traps — an ephemeral disk loses every task on redeploy,
-and a platform that scales to zero will stop a bot that listens on no port.
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, including moving an
+existing database across without corrupting it.
 
 ### Backups
 
-`scripts/backup.sh` takes a consistent snapshot with `sqlite3 .backup` (safe
-while the bot is running), gzips it, uploads it to `BACKUP_CHAT_ID` when that is
-set, and keeps the last seven locally. A nightly cron entry:
+`scripts/backup.sh` takes a consistent snapshot with `sqlite3 .backup` — safe
+while the bot is running — gzips it, uploads it to `BACKUP_CHAT_ID` if set, and
+keeps the last seven locally.
 
 ```
-15 3 * * * BOT_TOKEN=… DB_PATH=/srv/task-tracker-tg/tasks.db BACKUP_CHAT_ID=… /srv/task-tracker-tg/scripts/backup.sh
+15 3 * * * DB_PATH=/srv/task-tracker-tg/tasks.db /srv/task-tracker-tg/scripts/backup.sh
 ```
 
 ## Development
 
 ```bash
-make test
+make test     # ruff check, then mypy, then pytest — 343 tests, no network
+make lint     # formatting check
+make fmt      # apply it
 ```
 
-Runs `ruff check`, then `mypy`, then `pytest` — 338 tests, no network.
-[docs/AUDIT.md](docs/AUDIT.md) records what a product audit found, what was fixed,
-and what is still weak. `make lint`
-checks formatting and `make fmt` applies it.
+Handlers stay thin: a handler parses arguments, calls one function in
+`bot/services/`, and hands the result to `bot/render.py`. All logic lives in
+`bot/services/` so the tests run without Telegram. Schema changes are numbered SQL
+files in `bot/migrations/`, applied on startup against a `schema_version` table.
+Timestamps are stored as UTC ISO 8601 and rendered in the configured zone.
+
+`scripts/memprobe.py` measures resident memory under load, for choosing a
+container size from evidence rather than guesswork.
+
+## Not implemented
+
+Templates — expanding a named checklist into a dated tree of tasks — are
+specified but not built.
+
+## License
+
+[MIT](LICENSE)
